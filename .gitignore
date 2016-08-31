@@ -89,3 +89,5 @@ ENV/
 .ropeproject
 
 *~
+*#
+svm_sle_*
