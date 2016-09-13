@@ -8,10 +8,10 @@ import scipy
 
 binDir = os.path.split(__file__)[0]
 
-learnCommandTemplate='svm_sle_learn -v 3 {} {} {} {}'
+learnCommandTemplate = os.path.join(binDir, 'svm_sle_learn -v 3 {} {} {} {}')
 #svm_sle_learn -v [verbosity] [params] [data_file] [latent_file] [model_file]
 
-classifyCommandTemplate = 'svm_sle_classify {} {} {} {}'
+classifyCommandTemplate = os.path.join(binDir, 'svm_sle_classify {} {} {} {}')
 #svm_sle_classify ([-l]) [data_file] [model_file] [output_file]
 
 def write_params(C, extraction_size, feature_mode, norm_mode, window_mode):
@@ -29,28 +29,26 @@ def generate_hidden_variables(h_init, X_s, extraction_size):
     #if 'last' or 'first', select first or last extraction_size percent
 
     if h_init is None:
-        h = []
-        for x in X_s:
-            h.append(np.ones(len(x)))
-        return h
+        return [range(x.shape[0]) for x in X_s]
     elif h_init == 'random':
-        pass
+        return [sorted(np.random.choice(x.shape[0],
+                                        int(extraction_size*x.shape[0]),
+                                        False)) for x in X_s]
     elif h_init == 'last':
-        pass
+        return [range(x.shape[0])[-int(extraction_size*x.shape[0]):] for x in X_s]
     elif h_init == 'first':
-        pass
+        return [range(x.shape[0])[:int(extraction_size*x.shape[0])] for x in X_s]
     elif type(h_init) == str:
         raise Exception
-    
-    return h_init
+
+    return [h_init_s[:int(extraction_size*len(h_init_s)+1)] for h_init_s in h_init]
 
 def write_hidden_variables(h):
     #each line is of the format <number of subjective sentences> followed by their indices
     hidden_string = ''
     for h_s in h:
-        num_hidden = sum(h_s)
-        hidden_string += '{} '.format(num_hidden)
-        hidden_string += ('{} ' * num_hidden).format(*np.argwhere(h_s > 0).flatten().tolist())
+        hidden_string += '{} '.format(len(h_s))
+        hidden_string += ('{} '* len(h_s)).format(*h_s)
         hidden_string += '\n'
 
     return hidden_string
@@ -61,9 +59,7 @@ def read_hidden_variables(hidden_string):
     for line in hidden_string.splitlines():
         hidden_settings = line.split()
         num_hidden = int(hidden_settings[0])
-        h_s = np.zeros(num_hidden)
-        for setting in hidden_settings[1:]:
-            h_s[int(setting)] = 1
+        h_s = [int(i) for i in hidden_settings[1:]]
         h.append(h_s)
     return h
 
@@ -72,8 +68,11 @@ def sparse_to_row_dict(x):
     ret = collections.defaultdict(list)
     
     for i,j,v in zip(cx.row, cx.col, cx.data):
-        ret[i].append(j,v)
+        ret[i].append([j,v])
 
+    for i in ret:
+        ret[i] = sorted(ret[i], key=lambda x:x[0])
+        
     return ret
 
 def write_features(X_ss, X_sp, X_dp, y=None):
@@ -87,12 +86,12 @@ def write_features(X_ss, X_sp, X_dp, y=None):
 
     '''
     feature_string = ''
-    X_dp_dict = sparse_to_row_dict(X_dp)
 
     for i in range(len(X_ss)):
         X_ss_dict = sparse_to_row_dict(X_ss[i])
         X_sp_dict = sparse_to_row_dict(X_sp[i])
-
+        X_dp_dict = sparse_to_row_dict(X_dp[i])
+        
         if y is not None:
             feature_string += '{} '.format(y[i])
         else:
@@ -108,26 +107,83 @@ def write_features(X_ss, X_sp, X_dp, y=None):
             feature_string += '\n'
 
         feature_string += '{} '.format(len(X_ss_dict))
-        for k,v in range(len(X_dp_dict[i])):
+        for k,v in X_dp_dict[0]:
             feature_string += '{}:{} '.format(k,v)
         feature_string += '\n\n'
             
     return feature_string
 
+def process_feature_line(line, subjective=False):
+    features = line.split()
+    ret = {}
+    for feature in features[1:]:
+        key,value = feature.split(':')
+        if subjective and key[0] == 'S':
+            ret[int(key[1:])] = float(value)
+        elif not subjective and key[0] != 'S':
+            ret[int(key)] = float(value)
+            
+    return ret
+
+def dict_list_to_sparse(dicts):
+    num_features = max(max(i.keys()) if len(i) else 0 for i in dicts) + 1
+    ret = np.zeros((len(dicts), num_features))
+    for i in range(len(dicts)):
+        for k,v in dicts[i].items():
+            ret[i,k] = v
+    return ret
+
+def read_features(features_string):
+    data = features_string.splitlines()
+    i = 0
+    X_ss = []
+    X_sp = []
+    X_dp = []
+    y = []
+    while i < len(data):
+        label, num_sentences = data[i].split()
+        y.append(int(label))
+        num_sentences = int(num_sentences)
+
+        subjective_dicts = []
+        polarity_dicts = []
+        for j in range(num_sentences):
+            s = data[i + j + 1]
+            subjective_dicts.append(process_feature_line(s, subjective=True))
+            polarity_dicts.append(process_feature_line(s))
+        X_ss.append(dict_list_to_sparse(subjective_dicts))
+        X_sp.append(dict_list_to_sparse(polarity_dicts))
+        
+        d = process_feature_line(data[i + num_sentences + 1])
+        X_dp.append(dict_list_to_sparse([d]).flatten())
+        
+        i = i + num_sentences + 3
+        
+    return X_ss, X_sp, X_dp, y
+
+def read_document_scores(predictions_string):
+    ret = []
+    for line in predictions_string.splitlines():
+        if line.startswith('DOCUMENT POLARITY SCORE:'):
+            ret.append(float(line.replace('DOCUMENT POLARITY SCORE:', '')))
+    return ret
+    
 def read_predictions(predictions_string):
     ret = []
     for line in predictions_string.splitlines():
         labels = line.split()
-        ret.append(labels[0]
+        ret.append(int(labels[0]))
     return ret
-    
-def fit(feature_string, hidden_string, param_string):
-    feature_file = tempfile.NamedTemporaryFile()
-    feature_file.write(feature_string)
-        
-    hidden_file = tempfile.NamedTemporaryFile()
-    hidden_file.write(hidden_string)
 
+def fit(feature_string, hidden_string, param_string, verbose=False):
+    feature_file = tempfile.NamedTemporaryFile(dir=binDir)#, delete=False)
+    feature_file.write(feature_string)
+    feature_file.flush()
+        
+    hidden_file = tempfile.NamedTemporaryFile(dir=binDir)#, delete=False)
+    hidden_file.write(hidden_string)
+    hidden_file.flush()
+    
     model_filename = feature_file.name + '_model'
     
     command = learnCommandTemplate.format(param_string,
@@ -135,58 +191,72 @@ def fit(feature_string, hidden_string, param_string):
                                           hidden_file.name,
                                           model_filename)
 
-    p = subprocess.Popen([binDir] + command.split(),
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE)
+    if verbose:
+        p = subprocess.Popen(command.split())
+    else:
+        p = subprocess.Popen(command.split(),
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE)
     p.communicate()
     
     with open(model_filename) as f:
         model_string = f.read()
-
+    os.unlink(model_filename)
+        
     feature_file.close()
     hidden_file.close()
         
     return model_string
 
-def predict(feature_string, model_string, latent=False):
-    feature_file = tempfile.NamedTemporaryFile()
+def predict(feature_string, model_string, latent=False, scores=False, verbose=False):
+    feature_file = tempfile.NamedTemporaryFile(dir=binDir)
     feature_file.write(feature_string)
-        
-    model_file = tempfile.NamedTemporaryFile()
+    feature_file.flush()
+    
+    model_file = tempfile.NamedTemporaryFile(dir=binDir)
     model_file.write(model_string)
-
+    model_file.flush()
+    
     output_filename = feature_file.name + '_output'
 
-    latent_string = ''
+    param_string = ''
     if latent:
-        latent_string = '-l'
-
-    command = classifyCommandTemplate.format(latent_string,
+        param_string = '-l'
+    elif scores:
+        param_string = '-a'
+        
+    command = classifyCommandTemplate.format(param_string,
                                              feature_file.name,
                                              model_file.name,
                                              output_filename)
 
-    p = subprocess.Popen([binDir] + command.split(),
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE)
+    if verbose:
+        p = subprocess.Popen(command.split())
+    else:
+        p = subprocess.Popen(command.split(),
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE)
     p.communicate()
 
     with open(output_filename) as f:
         output_string = f.read()
-
+    os.unlink(output_filename)
+    
     if latent:
         return read_hidden_variables(output_string)
+    elif scores:
+        return read_document_scores(output_string)
     return read_predictions(output_string)
 
 class LatentSVM:
-    def __init__(num_iters=10, C=1.0,
+    def __init__(self, num_iters=10, C=1.0,
                  extraction_size=30, feature_mode=3,
                  norm_mode=2, window_mode=False,
                  verbose=False,
                  feature_extractor=None):
 
         self.num_iters = num_iters
-        self.extraction_size = extraction_size
+        self.extraction_size = extraction_size/100.
         self.param_string = write_params(C, extraction_size,
                                          feature_mode, norm_mode,
                                          window_mode)
@@ -218,22 +288,26 @@ class LatentSVM:
             f_string = write_features(X_ss, X_sp, X_dp, y)
                 
             #call svm_learn with the parameters
-            self.model_string = fit(f_string, h_string, self.param_string)
+            self.model_string = fit(f_string, h_string, self.param_string, verbose=self.verbose)
             
             #call predict_hidden with the new model
-            h = predict(f_string, self.model_string, latent=True)
+            h = predict(f_string, self.model_string, latent=True, verbose=self.verbose)
 
         #read in the the final parameter file and return that
         return self.model_string
     
-    def predict(self, X_ss, X_sp, X_dp):
+    def predict(self, X_ss, X_sp, X_dp, y=None):
         #call svm_classify
-        f_string = write_features(X_ss, X_sp, X_dp)
-        return predict(f_string, self.model_string)
+        f_string = write_features(X_ss, X_sp, X_dp, y)
+        return predict(f_string, self.model_string, verbose=self.verbose)
 
     def predict_hidden(self, X_ss, X_sp, X_dp, y=None):
         #call svm_classify to predict the hidden variables
         f_string = write_features(X_ss, X_sp, X_dp, y)
-        return predict(f_string, self.model_string, latent=True)
+        return predict(f_string, self.model_string, latent=True, verbose=self.verbose)
 
+    def decision_function(self, X_ss, X_sp, X_dp):
+        #call svm_classify with verbose and only return document scores
+        f_string = write_features(X_ss, X_sp, X_dp)
+        return predict(f_string, self.model_string, scores=True, verbose=self.verbose)
         
