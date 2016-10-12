@@ -25,22 +25,22 @@ def handle_pairs_input(pairs, num_responses=2**32, cleanup=cleanup):
     pos_text = []
 
     for pair in pairs:
-        post = []
-        for line in pair['op_text'].splitlines():
-            post.extend(cleanup(line))
-        op_text.append(post)
+        op_text.append(list(cleanup(pair['op_text'])))
 
         post = []
         for comment in pair['negative']['comments'][:num_responses]:
-            for line in comment['body'].splitlines():
-                post.extend(cleanup(line))
+            post.extend(list(cleanup(comment['body'])))
         neg_text.append(post)
 
         post = []
         for comment in pair['positive']['comments'][:num_responses]:
-            for line in comment['body'].splitlines():
-                post.extend(cleanup(line))
+            post.extend(list(cleanup(comment['body'])))
         pos_text.append(post)
 
     return op_text,neg_text,pos_text
 
+def handle_titles(pairs, cleanup=cleanup):
+    titles = []
+    for pair in pairs:
+        titles.append(list(cleanup(pair['op_title'])))
+    return titles
