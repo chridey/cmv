@@ -182,11 +182,11 @@ class LSTMDecoderLayer(lasagne.layers.LSTMLayer):
             step_fun = step
 
         ones = T.ones((num_batch, 1))
-        if not isinstance(self.cell_init, Layer):
+        if not isinstance(self.cell_init, lasagne.layers.Layer):
             # Dot against a 1s vector to repeat to shape (num_batch, num_units)
             cell_init = T.dot(ones, self.cell_init)
 
-        if not isinstance(self.hid_init, Layer):
+        if not isinstance(self.hid_init, lasagne.layers.Layer):
             # Dot against a 1s vector to repeat to shape (num_batch, num_units)
             hid_init = T.dot(ones, self.hid_init)
 
