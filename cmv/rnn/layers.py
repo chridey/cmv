@@ -87,7 +87,7 @@ class AttentionSentenceLayer(lasagne.layers.MergeLayer):
     def __init__(self, incomings, d, W_s=lasagne.init.Normal(),
                  u_s=lasagne.init.Normal(), b_s=lasagne.init.Normal(), **kwargs):
         super(AttentionSentenceLayer, self).__init__(incomings, **kwargs)
-        self.W_s = self.add_param(W_s, (d,d))
+        self.W_s = self.add_param(W_s, (incomings[0].output_shape[-1], d))
         self.u_s = self.add_param(u_s, (d,))
         self.b_s = self.add_param(b_s, (1,))
         
@@ -116,22 +116,30 @@ class AttentionSentenceLayer(lasagne.layers.MergeLayer):
         return (None,input_shapes[0][-1])
     
 class WeightedAverageWordLayer(lasagne.layers.MergeLayer):
-        def __init__(self, incomings, **kwargs):
-            super(WeightedAverageWordLayer, self).__init__(incomings, **kwargs)
+    def __init__(self, incomings, **kwargs):
+        super(WeightedAverageWordLayer, self).__init__(incomings, **kwargs)
 
-        def get_output_for(self, inputs, **kwargs):
-            return T.sum(inputs[0] * inputs[1][:,:,:,None], axis=2)
+    def get_output_for(self, inputs, **kwargs):
+        return T.sum(inputs[0] * inputs[1][:,:,:,None], axis=2)
 
-        def get_output_shape_for(self, input_shapes):
-            return (None, input_shapes[0][1], input_shapes[0][-1])
+    def get_output_shape_for(self, input_shapes):
+        return (None, input_shapes[0][1], input_shapes[0][-1])
 
 class WeightedAverageSentenceLayer(lasagne.layers.MergeLayer):
-        def __init__(self, incomings, **kwargs):
-            super(WeightedAverageSentenceLayer, self).__init__(incomings, **kwargs)
+    def __init__(self, incomings, **kwargs):
+        super(WeightedAverageSentenceLayer, self).__init__(incomings, **kwargs)
+        
+    def get_output_for(self, inputs, **kwargs):
+        return T.sum(inputs[0] * inputs[1][:,:,None], axis=1)
 
-        def get_output_for(self, inputs, **kwargs):
-            return T.sum(inputs[0] * inputs[1][:,:,None], axis=1)
+    def get_output_shape_for(self, input_shapes):
+        return (None, input_shapes[0][-1])
+        
+#incomplete, only works for very specific case    
+class BroadcastLayer(lasagne.layers.Layer):
+    def __init__(self, incomings, shape, **kwargs):
+        super(BroadcastLayer, self).__init__(incomings, **kwargs)
+        self.shape = shape
 
-        def get_output_shape_for(self, input_shapes):
-            return (None, input_shapes[0][-1])
-            
+    def get_output_for(self, inputs, **kwargs):
+        return T.ones(self.shape) * inputs[:, None, :]

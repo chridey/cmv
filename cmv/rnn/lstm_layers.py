@@ -30,7 +30,7 @@ class LSTMDecoderLayer(lasagne.layers.LSTMLayer):
         super(LSTMDecoderLayer, self).__init__(incomings[0], d, **kwargs)
 
         #initialize weights for context at time t
-        num_inputs = self.input_shapes[1][-1]
+        num_inputs = self.incomings[1].output_shape[-1]
         self.W_c_to_ingate = self.add_param(lasagne.init.Normal(), 
                                             (num_inputs,d), 
                                             name='W_c_to_ingate')

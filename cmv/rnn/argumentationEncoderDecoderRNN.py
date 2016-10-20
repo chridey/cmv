@@ -16,7 +16,8 @@ class ArgumentationEncoderDecoderRNN:
                  max_sentence_length,
                  embeddings,
                  GRAD_CLIP=100,
-                 freeze_words=False):
+                 freeze_words=False,
+                 alignment=False):
 
         #S x N matrix of sentences (aka list of word indices)
         #B x S x N tensor of batches of posts
@@ -71,7 +72,17 @@ class ArgumentationEncoderDecoderRNN:
                                        nonlinearity=lasagne.nonlinearities.tanh,
                                        grad_clipping=GRAD_CLIP,
                                        mask_input=l_mask_rr_s)
-        l_attn_rr_s = AttentionSentenceLayer([l_lstm_rr_s, l_mask_rr_s], rd)        
+
+        #attention is dependent on the response as well as the OP
+        #if we are not doing alignments, we need to broadcast the B x D context layer to B x S x D
+        l_lstm_op_avg_context = l_lstm_op_avg
+        if not alignments:
+            l_lstm_op_avg_context = BroadcastLayer(l_lstm_op_avg, 
+                                                   l_lstm_rr_s.output_shape)
+        l_concat_lstm_rr_op_avg = lasagne.layers.ConcatLayer([l_lstm_rr_s,
+                                                              l_lstm_op_avg_context])
+
+        l_attn_rr_s = AttentionSentenceLayer([l_concat_lstm_rr_op_avg, l_mask_rr_s], rd)        
         l_lstm_rr_avg = WeightedAverageSentenceLayer([l_lstm_rr_s, l_attn_rr_s])
 
         l_hid1 = lasagne.layers.DenseLayer(l_lstm_rr_avg, num_units=rd,
