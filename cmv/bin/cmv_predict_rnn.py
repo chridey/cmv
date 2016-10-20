@@ -8,6 +8,7 @@ from cmv.preprocessing.loadData import load_train_pairs,load_test_pairs,handle_p
 
 from cmv.rnn.preprocessing import build_indices
 from cmv.rnn.argumentationRNN import ArgumentationRNN
+from cmv.rnn.argumentationEncoderDecoderRNN import ArgumentationEncoderDecoderRNN
 
 if __name__ == '__main__':
 
@@ -27,9 +28,10 @@ if __name__ == '__main__':
     #load training, testing, and embeddings
     data = np.load(args.inputfile)
     
-    argRNN = ArgumentationRNN(data['embeddings'].shape[0], data['embeddings'].shape[1],
-                              args.recurrent_dimension, data['train_op'].shape[1],
-                              data['train_op'].shape[2], data['embeddings'])
+    rnnType = ArgumentationEncoderDecoderRNN
+    argRNN = rnnType(data['embeddings'].shape[0], data['embeddings'].shape[1],
+                     args.recurrent_dimension, data['train_op'].shape[1],
+                     data['train_op'].shape[2], data['embeddings'])
 
     print(data['embeddings'].shape)
     print(data['train_rr'].shape)
