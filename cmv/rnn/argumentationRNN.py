@@ -4,7 +4,8 @@ import numpy as np
 import lasagne
 from lasagne.regularization import apply_penalty, l2
 
-from cmv.rnn.layers import AverageWordLayer, AverageSentenceLayer, AttentionWordLayer, AttentionSentenceLayer, WeightedAverageWordLayer, WeightedAverageSentenceLayer, reshapeLSTMLayer
+from cmv.rnn.layers import AverageWordLayer, AverageSentenceLayer, AttentionWordLayer, AttentionSentenceLayer, WeightedAverageWordLayer, WeightedAverageSentenceLayer, 
+from cmv.rnn.lstm_layers import reshapeLSTMLayer
 
 class ArgumentationRNN:
     def __init__(self,

@@ -135,17 +135,3 @@ class WeightedAverageSentenceLayer(lasagne.layers.MergeLayer):
         def get_output_shape_for(self, input_shapes):
             return (None, input_shapes[0][-1])
             
-def reshapeLSTMLayer(embedding_layer, mask_layer, input_shape, d):
-    l_reshape_op_w = lasagne.layers.ReshapeLayer(embedding_layer,
-                                                (input_shape[0]*input_shape[1],
-                                                input_shape[2], input_shape[3]))
-    l_reshape_mask_op_w = lasagne.layers.ReshapeLayer(mask_layer,
-                                                      (input_shape[0]*input_shape[1],
-                                                       input_shape[2]))
-    l_lstm_op_w = lasagne.layers.LSTMLayer(l_reshape_op_w, d,
-                                           nonlinearity=lasagne.nonlinearities.tanh,
-                                           grad_clipping=100,
-                                           mask_input=l_reshape_mask_op_w)
-    return lasagne.layers.ReshapeLayer(l_lstm_op_w,
-                                       (input_shape[0], input_shape[1],
-                                        input_shape[2], input_shape[3]))
