@@ -31,10 +31,18 @@ class LSTMDecoderLayer(lasagne.layers.LSTMLayer):
 
         #initialize weights for context at time t
         num_inputs = self.input_shapes[1][-1]
-        self.add_param(lasagne.init.Normal(), (num_inputs,d), name='W_c_to_ingate')
-        self.add_param(lasagne.init.Normal(), (num_inputs,d), name='W_c_to_forgetgate')
-        self.add_param(lasagne.init.Normal(), (num_inputs,d), name='W_c_to_cell')
-        self.add_param(lasagne.init.Normal(), (num_inputs,d), name='W_c_to_outgate')
+        self.W_c_to_ingate = self.add_param(lasagne.init.Normal(), 
+                                            (num_inputs,d), 
+                                            name='W_c_to_ingate')
+        self.W_c_to_forgetgate = self.add_param(lasagne.init.Normal(), 
+                                            (num_inputs,d), 
+                                            name='W_c_to_forgetgate')
+        self.W_c_to_cell = self.add_param(lasagne.init.Normal(), 
+                                            (num_inputs,d), 
+                                            name='W_c_to_cell')
+        self.W_c_to_outgate = self.add_param(lasagne.init.Normal(), 
+                                            (num_inputs,d), 
+                                            name='W_c_to_outgate')
 
         self.input_shapes.append(incomings[1] if isinstance(incomings[1], 
                                                             tuple) else incomings[1].output_shape)
