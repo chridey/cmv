@@ -25,7 +25,7 @@ def handle_pairs_input(pairs, num_responses=2**32, cleanup=cleanup):
     pos_text = []
 
     for pair in pairs:
-        op_text.append(list(cleanup(pair['op_text'])))
+        op_text.append(list(cleanup(pair['op_text'], op=True)))
 
         post = []
         for comment in pair['negative']['comments'][:num_responses]:
