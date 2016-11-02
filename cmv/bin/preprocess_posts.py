@@ -1,5 +1,6 @@
 import argparse
 import json
+import re
 
 from spacy.en import English
 import gensim
@@ -8,6 +9,8 @@ import nltk
 import numpy as np
 
 from cmv.preprocessing.loadData import load_train_pairs,load_test_pairs,handle_pairs_input,handle_titles
+from cmv.preprocessing import conll
+from cmv.preprocessing import semafor
 
 from cmv.rnn.preprocessing import build_indices
 
@@ -15,13 +18,17 @@ from cmv.preprocessing.preprocess import normalize_from_body
 
 nlp = English()
 stemmer = nltk.stem.SnowballStemmer('english')
+frame_parser = semafor.TCPClientSemaforParser()
 
-embeddings_file = '/proj/nlp/corpora/GloVE/twitter/glove.twitter.27B.200d.txt.out.gensim'
+#embeddings_file = '/proj/nlp/corpora/GloVE/twitter/glove.twitter.27B.200d.txt.out.gensim'
+embeddings_file = '/proj/nlpdisk3/nlpusers/chidey/cmv/glove.twitter.27B.200d.txt.out.gensim'
+cmv_pattern = re.compile('cmv:?', re.IGNORECASE)
 
-def cleanup(text):
+def cleanup(text, op=False):
 
-    cleaned_text = normalize_from_body(text)
-    cleaned_text = cleaned_text.replace('cmv:', '').replace('cmv', '').replace('\n', '  ')
+    cleaned_text = normalize_from_body(text, op=op, lower=False)
+    cleaned_text = cleaned_text.replace('\n', '  ')
+    cleaned_text = cmv_pattern.sub('', cleaned_text)
     parsed_text = nlp(unicode(cleaned_text))
     return list(parsed_text.sents)
     
@@ -29,9 +36,9 @@ def cleanup(text):
     for sent in parsed_text.sents:
         ret_sent = []
         for word in sent:
-            ret_word = word.string.strip()
-            if len(ret_word):
-                ret_sent.append(word)
+            #ret_word = word.string.strip()
+            #if len(ret_word):
+            ret_sent.append(word)
         if len(ret_sent):
             ret_post.append(ret_sent)
     return ret_post
@@ -50,16 +57,18 @@ def getSentenceMetadata(docs):
     for doc in docs:
         ret_sents = []
         offset = 0
+        conll_string = u''
         for sent in doc:
             ret_words = {'lemmas': [],
                          'words': [],
                          'stems': [],
                          'dependencies': [],
                          'ner': [],
-                         'pos': []}
+                         'pos': [],
+                         'frames': []}
             empty = {i for (i,word) in enumerate(sent) if not len(word.string.strip())}
             #print(offset, empty)
-            for word in sent:
+            for index,word in enumerate(sent):
                 if not len(word.string.strip()):
                     continue
                 ret_words['lemmas'].append(word.lemma_)
@@ -67,12 +76,34 @@ def getSentenceMetadata(docs):
                 ret_words['ner'].append('O')
                 ret_words['stems'].append(stemmer.stem(unicode(word)))
                 ret_words['words'].append(unicode(word))
-                index = word.head.i-offset-sum(1 for x in empty if x < word.head.i-offset)
+                head = word.head.i-offset-sum(1 for x in empty if x < word.head.i-offset)
                 if word.dep_ == 'ROOT':
-                    index = -1
-                ret_words['dependencies'].append((word.dep_.lower(),index))
+                    head = -1
+                ret_words['dependencies'].append((word.dep_.lower(),head))
+                ret_words['frames'].append(None)
+                conll_string += conll.to_conll(index-sum(1 for x in empty if x < word.head.i-offset), word, head)
             offset += len(sent)
+            if not len(ret_words):
+                continue
+            conll_string += u'\n'
             ret_sents.append(ret_words)
+
+        print(conll_string)
+        if len(conll_string.strip()):
+            frames = frame_parser.get_frames(conll_string)
+            print(len(frames), len(doc), len(ret_sents))
+            assert(len(frames) == len(ret_sents))
+        
+            for dindex,sent in enumerate(ret_sents):
+                print(frames[dindex])
+                print(frames[dindex].tokens)
+                print(ret_sents[dindex]['words'])
+                print(len(frames[dindex].tokens), len(ret_sents[dindex]['words']))
+                assert(len(frames[dindex].tokens) == len(ret_sents[dindex]['words']))
+                for frame,windex in frames[dindex].iterTargets():
+                    ret_sents[dindex]['frames'][windex] = frame
+        else:
+            print('conll_string is empty')
         ret_docs.append(ret_sents)
     return ret_docs
 
@@ -84,17 +115,21 @@ if __name__ == '__main__':
     parser.add_argument('--max_sentence_length', type=int, default=256)
     parser.add_argument('--max_post_length', type=int, default=40)        
     args = parser.parse_args()
-    
+
+    print('loading data...')    
     train_pairs = load_train_pairs()
     heldout_pairs = load_test_pairs()
 
+    print('handling titles...')
     train_titles = handle_titles(train_pairs, cleanup=cleanup)
-    heldout_titles = handle_titles(heldout_pairs, cleanup=cleanup)        
+    heldout_titles = handle_titles(heldout_pairs, cleanup=cleanup)
+    print('handling posts...')
     train_op, train_neg, train_pos = handle_pairs_input(train_pairs, args.root_replies,
                                                         cleanup=cleanup)
     heldout_op, heldout_neg, heldout_pos = handle_pairs_input(heldout_pairs, args.root_replies,
                                                               cleanup=cleanup)
-    
+
+    print('getting metadata...')
     metadata = {}
     for name,docs in (('train_op', train_op),
                     ('train_pos', train_pos),
@@ -108,6 +143,9 @@ if __name__ == '__main__':
     with open(args.outfile + '.metadata.json', 'w') as f:
         json.dump(metadata, f)
 
+    exit()
+        
+    print('converting to indices...')
     train_op, train_rr, train_labels, train_mask_op_s, train_mask_rr_s, train_mask_op_w, train_mask_rr_w, indices = build_indices(train_op, train_pos, train_neg, max_sentence_length=args.max_sentence_length, max_post_length=args.max_post_length, mask=True)
 
     val_op, val_rr, val_labels, val_mask_op_s, val_mask_rr_s, val_mask_op_w, val_mask_rr_w, indices = build_indices(heldout_op, heldout_pos, heldout_neg, indices=indices, max_sentence_length=args.max_sentence_length, max_post_length=args.max_post_length, mask=True,)
