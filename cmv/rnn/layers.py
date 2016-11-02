@@ -52,7 +52,7 @@ class AttentionWordLayer(lasagne.layers.MergeLayer):
     def __init__(self, incomings, d, W_w=lasagne.init.Normal(),
                  u_w=lasagne.init.Normal(), b_w=lasagne.init.Normal(), **kwargs):
         super(AttentionWordLayer, self).__init__(incomings, **kwargs)
-        self.W_w = self.add_param(W_w, (d,d))
+        self.W_w = self.add_param(W_w, (incomings[0].output_shape[-1],d))
         self.u_w = self.add_param(u_w, (d,))
         self.b_w = self.add_param(b_w, (1,))
         
@@ -136,10 +136,12 @@ class WeightedAverageSentenceLayer(lasagne.layers.MergeLayer):
         return (None, input_shapes[0][-1])
         
 #incomplete, only works for very specific case    
-class BroadcastLayer(lasagne.layers.Layer):
-    def __init__(self, incomings, shape, **kwargs):
+class BroadcastLayer(lasagne.layers.MergeLayer):
+    def __init__(self, incomings, **kwargs):
         super(BroadcastLayer, self).__init__(incomings, **kwargs)
-        self.shape = shape
 
     def get_output_for(self, inputs, **kwargs):
-        return T.ones(self.shape) * inputs[:, None, :]
+        return T.ones_like(inputs[1]) * inputs[0][:, None, :]
+
+    def get_output_shape_for(self, input_shapes, **kwargs):
+        return input_shapes[1]
