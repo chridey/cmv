@@ -1,3 +1,5 @@
+import collections
+
 MAX_POST_LENGTH = 40
 MAX_SENTENCE_LENGTH = 256
 
@@ -39,11 +41,32 @@ def make_sentence_mask(post_length, max_post_length, sentence_lengths, max_sente
     for i in range(max_post_length-post_length):
         ret.append([0]*max_sentence_length)
     return ret
-                                        
+
+def preprocess_indices_min_count(pos, neg, min_count):
+    #first go through training and count the occurrences of each word
+    counts = collections.defaultdict(int)
+    for i in range(len(pos)):
+        for sentence in pos[i]:
+            for word in sentence:
+                counts[word] += 1
+
+        for sentence in neg[i]:
+            for word in sentence:
+                counts[word] += 1
+
+    #then add to indices['words'] only if the count is above the threshold
+    indices = {None:0}
+    for word in counts:
+        if counts[word] >= min_count and word not in indices:
+            indices[word] = len(indices)
+
+    return indices
+
+#TODO: lowercase or not                                        
 def build_indices(op, pos, neg, indices=None, mask=False,
                   max_sentence_length=MAX_SENTENCE_LENGTH,
                   max_post_length=MAX_POST_LENGTH, add=True):
-    if not indices:
+    if indices is None or len(indices) == 0:
         indices = {None:0}
 
     op_ret = []
