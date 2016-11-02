@@ -142,10 +142,10 @@ def filter_words_edit(sentences, op=False):
     return result
 
 
-def normalize_from_body(body, op=False):
+def normalize_from_body(body, op=False, lower=True):
     '''Normalize a body after removing edits.'''
     return "\n".join(filter_words_edit(
-            normalize_url(preprocess(body)).split('\n'),
+            normalize_url(preprocess(body, lower)).split('\n'),
             op=op))
     
 def remove_special_token(text):
