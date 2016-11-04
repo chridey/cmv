@@ -62,6 +62,21 @@ def preprocess_indices_min_count(pos, neg, min_count):
 
     return indices
 
+def make_post_indices_and_masks(post, indices, max_sentence_length, max_post_length, mask, add):
+    curr_indices = make_post_indices(post, indices, max_sentence_length, max_post_length, add)
+
+    post_length = len(curr_indices)
+    sentence_lengths = [len(i) for i in curr_indices]
+    if mask:
+        post_length = len(post)
+        sentence_lengths = [len(i) for i in post]
+        
+    indices_mask_s = make_sentence_mask(post_length, max_post_length,
+                                        sentence_lengths, max_sentence_length)
+    indices_mask = make_mask(post_length, max_post_length)
+
+    return curr_indices, indices_mask_s, indices_mask    
+
 #TODO: lowercase or not                                        
 def build_indices(op, pos, neg, indices=None, mask=False,
                   max_sentence_length=MAX_SENTENCE_LENGTH,
@@ -78,32 +93,27 @@ def build_indices(op, pos, neg, indices=None, mask=False,
     gold = []
 
     for i in range(len(op)):
-        curr_indices = make_post_indices(op[i], indices, max_sentence_length, max_post_length, add)
-        if mask:
-            indices_mask_s = make_sentence_mask(len(curr_indices), max_post_length,
-                                                [len(j) for j in curr_indices], max_sentence_length)
-            op_mask_s.extend([indices_mask_s, indices_mask_s])
-            indices_mask = make_mask(len(curr_indices), max_post_length)
-            op_mask.extend([indices_mask, indices_mask])
+        curr_indices, indices_mask_s, indices_mask = make_post_indices_and_masks(op[i],
+                                                                                 indices,
+                                                                                 max_sentence_length,
+                                                                                 max_post_length,
+                                                                                 mask,
+                                                                                 add)
+        op_mask_s.extend([indices_mask_s, indices_mask_s])
+        op_mask.extend([indices_mask, indices_mask])
         op_ret.extend([curr_indices, curr_indices])
 
-        curr_indices = make_post_indices(pos[i], indices, max_sentence_length, max_post_length, add)
-        if mask:
-            indices_mask_s = make_sentence_mask(len(curr_indices), max_post_length,
-                                                [len(j) for j in curr_indices], max_sentence_length)
+        for resp in (pos[i], neg[i]):
+            curr_indices, indices_mask_s, indices_mask = make_post_indices_and_masks(resp,
+                                                                                    indices,
+                                                                                    max_sentence_length,
+                                                                                    max_post_length,
+                                                                                    mask,
+                                                                                    add)
+        
             resp_mask_s.append(indices_mask_s)
-            indices_mask = make_mask(len(curr_indices), max_post_length)
             resp_mask.append(indices_mask)
-        resp_ret.append(curr_indices)
-    
-        curr_indices = make_post_indices(neg[i], indices, max_sentence_length, max_post_length, add)
-        if mask:
-            indices_mask_s = make_sentence_mask(len(curr_indices), max_post_length,
-                                                [len(j) for j in curr_indices], max_sentence_length)
-            resp_mask_s.append(indices_mask_s)
-            indices_mask = make_mask(len(curr_indices), max_post_length)
-            resp_mask.append(indices_mask)
-        resp_ret.append(curr_indices)
+            resp_ret.append(curr_indices)
 
         gold.extend([1,0])
 
