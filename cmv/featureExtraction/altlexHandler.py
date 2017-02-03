@@ -93,6 +93,9 @@ class AltlexHandler:
             
         return connectiveSentences
 
+    def getCausalConnectiveSentences(self, metadataList, checkCache=True):
+        return self.getConnectiveSentences(metadataList, self.causalAltlexes, checkCache)
+
     def addFeatures(self, metadataList):
         if self.cache is not None and 'features' in self.cache:
             return self.cache['features']
@@ -122,6 +125,17 @@ class AltlexHandler:
         
         #sum or accumulate the scores over each sentence
         return sum(i for i in predictions if i > 0), sum(i for i in predictions if i < 0)
+
+    def causalPredictions(self, metadataList):
+        #extract features for each sentence and get the decision_function
+        features = [f for (i,f) in enumerate(self.addFeatures(metadataList))]
+        try:
+            features_transformed = self.vectorizer.transform(features)
+        except ValueError:
+            print("problem with feature transformer")
+            return [0]*len(metadataList)
+        
+        return self.classifier.predict(features_transformed)
 
     def getSemanticsFullSentence(self, metadataList, resourceType, normalize=True):
         validIndices = {i for i in range(len(metadataList)) if not metadataList[i].altlexLength}
