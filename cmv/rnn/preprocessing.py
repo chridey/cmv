@@ -117,4 +117,78 @@ def build_indices(op, pos, neg, indices=None, mask=False,
 
         gold.extend([1,0])
 
-    return op_ret, resp_ret, gold, op_mask, resp_mask, op_mask_s, resp_mask_s, indices                                                                                                                                                                                                                                                                                                                            
+    return op_ret, resp_ret, gold, op_mask, resp_mask, op_mask_s, resp_mask_s, indices
+
+def build_indices_2d(op, pos, neg, indices=None, max_length=MAX_SENTENCE_LENGTH, add=True):
+    if indices is None or len(indices) == 0:
+        indices = {None:0}
+
+    op_ret = []
+    resp_ret = []
+
+    for i in range(len(op)):
+        op_indices = make_sentence_indices(op[i], indices, max_length, add)
+        op_ret.extend([op_indices, op_indices])
+
+        for data in (pos[i], neg[i]):
+            resp_ret.append(make_sentence_indices(data, indices, max_length, add))
+
+
+    return op_ret, resp_ret, indices
+
+def build_indices_unbalanced(op, pos, neg, indices=None, mask=False,
+                  max_sentence_length=MAX_SENTENCE_LENGTH,
+                  max_post_length=MAX_POST_LENGTH, add=True):
+        
+    if indices is None or len(indices) == 0:
+        indices = {None:0}
+
+
+    resp_ret = []
+    resp_mask = []
+    resp_mask_s = []
+    gold = []
+
+    for label,data in ((1,pos), (0,neg)):
+        for resp in data:
+            curr_indices, indices_mask_s, indices_mask = make_post_indices_and_masks(resp,
+                                                                                     indices,
+                                                                                     max_sentence_length,
+                                                                                     max_post_length,
+                                                                                     mask,
+                                                                                     add)
+
+            resp_mask_s.append(indices_mask_s)
+            resp_mask.append(indices_mask)
+            resp_ret.append(curr_indices)
+
+            gold.append(label)
+        
+    return [], resp_ret, gold, [], resp_mask, [], resp_mask_s, indices
+
+def build_indices_2d_unbalanced(op, pos, neg, indices=None, max_length=MAX_SENTENCE_LENGTH, add=True):
+    if indices is None or len(indices) == 0:
+        indices = {None:0}
+
+    resp_ret = []
+
+    for data in (pos, neg):
+        for resp in data:
+            resp_ret.append(make_sentence_indices(resp, indices, max_length, add))
+
+    return [],resp_ret, indices
+
+def build_title_indices(titles, indices=None, max_length=MAX_SENTENCE_LENGTH, add=True):
+    if indices is None or len(indices) == 0:
+        indices = {None:0}
+
+    title_indices = []
+    title_mask = []
+
+    for i in range(len(titles)):
+        title_indices_i = make_sentence_indices(titles[i][0], indices, max_length, add)
+        title_indices.extend([title_indices_i, title_indices_i])
+        mask = make_mask(len(titles[i][0]), max_length)
+        title_mask.extend([mask, mask])
+        
+    return title_indices, title_mask, indices
