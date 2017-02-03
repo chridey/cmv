@@ -35,7 +35,8 @@ class ArgumentationEncoderDecoderRNN:
         mask_rr_s = T.imatrix('mask_rr_s')
         #B-long vector
         gold = T.ivector('gold')
-        
+        p_dropout = T.scalar('p_dropout')
+                
         #now use this as an input to an LSTM
         l_idxs_op = lasagne.layers.InputLayer(shape=(None, max_post_length, max_sentence_length),
                                             input_var=idxs_op)
@@ -68,21 +69,15 @@ class ArgumentationEncoderDecoderRNN:
 
         #now use this as an input to an LSTM
         #shape is still B x S x D
-        '''
-        l_lstm_op_s = lasagne.layers.LSTMLayer(l_avg_op_s, rd,
-                                               nonlinearity=lasagne.nonlinearities.tanh,
-                                               grad_clipping=GRAD_CLIP,
-                                               mask_input=l_mask_op_s)
-        '''
 
         #need a B x 1 index and mask layer
-        l_eop = lasagne.layers.ReshapeLayer(lasagne.layers.InputLayer(shape=(None,),
-                                                                      input_var=T.zeros_like(gold)),
-                                            ([0], 1))
-        l_mask_eop = lasagne.layers.ReshapeLayer(lasagne.layers.InputLayer(shape=(None,),
-                                                                      input_var=T.ones_like(gold)),
-                                            ([0], 1))
-
+        l_eop = lasagne.layers.InputLayer(shape=(None, 1),
+                                          input_var=T.zeros((idxs_op.shape[0], 1),
+                                                            dtype='int32'))
+        l_mask_eop = lasagne.layers.InputLayer(shape=(None, 1),
+                                               input_var=T.ones((idxs_op.shape[0], 1),
+                                                                dtype='int32'))
+        
         #now B x 1 x D
         l_emb_eop = lasagne.layers.EmbeddingLayer(l_eop, V, d,
                                                   W=l_emb_op_w.W)
@@ -97,51 +92,71 @@ class ArgumentationEncoderDecoderRNN:
                                                  mask_input=l_mask_thread)
         #lstm_op and lstm_rr are the first S and last S in the lstm
         l_lstm_op_s = lasagne.layers.SliceLayer(l_lstm_thread,
-                                                indices=slice(0, max_post_length), axis=1)
+                                                #indices=max_post_length, #
+                                                slice(0, max_post_length),
+                                                axis=1)
         l_lstm_rr_s = lasagne.layers.SliceLayer(l_lstm_thread,
-                                                indices=slice(-max_post_length, None), axis=1)
+                                                #indices=-1, #
+                                                slice(-max_post_length, None),
+                                                axis=1)
         
         #LSTM w/ attn
+        '''
+        l_lstm_op_s = lasagne.layers.LSTMLayer(l_avg_op_s, rd,
+                                               nonlinearity=lasagne.nonlinearities.tanh,
+                                               grad_clipping=GRAD_CLIP,
+                                               mask_input=l_mask_op_s)
+
         l_attn_op_s = AttentionSentenceLayer([l_lstm_op_s, l_mask_op_s], rd)        
         l_lstm_op_avg = WeightedAverageSentenceLayer([l_lstm_op_s, l_attn_op_s])
 
-        '''
         l_lstm_rr_s = LSTMDecoderLayer([l_avg_rr_s, l_lstm_op_avg], rd,
-                                       hid_init=lasagne.layers.SliceLayer(l_lstm_op_s,
-                                                                          indices=-1,
-                                                                          axis=1), #l_lstm_op_avg,
+                                       #hid_init=lasagne.layers.SliceLayer(l_lstm_op_s,
+                                       #                                   indices=-1,
+                                       #                                   axis=1), #l_lstm_op_avg,
                                        nonlinearity=lasagne.nonlinearities.tanh,
                                        grad_clipping=GRAD_CLIP,
                                        mask_input=l_mask_rr_s)
+        '''
         
-
         #attention is dependent on the response as well as the OP
         #if we are not doing alignments, we need to broadcast the B x D context layer to B x S x D
+        '''
         l_lstm_op_avg_context = l_lstm_op_avg
         if not alignment:
             l_lstm_op_avg_context = BroadcastLayer([l_lstm_op_avg, 
                                                    l_lstm_rr_s])
         print(l_lstm_op_avg_context.output_shape)
-        print(l_lstm_rr_s.output_shape)            
+        print(l_lstm_rr_s.output_shape)
+
         l_concat_lstm_rr_op_avg = lasagne.layers.ConcatLayer([l_lstm_rr_s,
                                                               l_lstm_op_avg_context],
                                                               axis=-1)
         
         l_attn_rr_s = AttentionSentenceLayer([l_concat_lstm_rr_op_avg, l_mask_rr_s], rd)
-        '''
-        '''
+
         l_lstm_rr_s = lasagne.layers.LSTMLayer(l_avg_rr_s, rd,
-                                               hid_init=lasagne.layers.SliceLayer(l_lstm_op_s,
-                                                                                  indices=-1,
-                                                                                  axis=1),
+                                               #hid_init=lasagne.layers.SliceLayer(l_lstm_op_s,
+                                               #                                   indices=-1,
+                                               #                                   axis=1),
                                                #hid_init=l_lstm_op_avg,
                                                nonlinearity=lasagne.nonlinearities.tanh,
                                                grad_clipping=GRAD_CLIP,
                                                mask_input=l_mask_rr_s)
-        '''
-        l_attn_rr_s = AttentionSentenceLayer([l_lstm_rr_s, l_mask_rr_s], rd)        
-        l_lstm_rr_avg = WeightedAverageSentenceLayer([l_lstm_rr_s, l_attn_rr_s])
 
+
+        '''                                               
+        #l_attn_rr_s = AttentionSentenceLayer([l_lstm_rr_s, l_mask_rr_s], rd)        
+        #l_lstm_rr_avg = WeightedAverageSentenceLayer([l_lstm_rr_s, l_attn_rr_s])
+        #l_attn_op_s = AttentionSentenceLayer([l_lstm_op_s, l_mask_op_s], rd)        
+        #l_lstm_op_avg = WeightedAverageSentenceLayer([l_lstm_op_s, l_attn_op_s])
+
+        #l_lstm_rr_avg = AverageSentenceLayer([l_lstm_rr_s, l_mask_rr_s])
+        #l_lstm_op_avg = AverageSentenceLayer([l_lstm_op_s, l_mask_op_s])
+        
+        l_lstm_rr_avg = lasagne.layers.SliceLayer(l_lstm_rr_s, indices=-1, axis=1)
+        l_lstm_op_avg = lasagne.layers.SliceLayer(l_lstm_op_s, indices=-1, axis=1)
+        
         #concatenate with rr-op and rr*op
         l_diff = lasagne.layers.ElemwiseMergeLayer([l_lstm_rr_avg, l_lstm_op_avg],
                                                    T.sub)
@@ -156,6 +171,7 @@ class ArgumentationEncoderDecoderRNN:
         #l_hid1 = lasagne.layers.DenseLayer(l_lstm_rr_avg, num_units=rd,
         l_hid1 = lasagne.layers.DenseLayer(l_concat, num_units=rd,
                                           nonlinearity=lasagne.nonlinearities.rectify)
+        l_hid1 = lasagne.layers.DropoutLayer(l_hid1, p_dropout)
         self.network = lasagne.layers.DenseLayer(l_hid1, num_units=1,
                                                  nonlinearity=T.nnet.sigmoid)
         
@@ -178,7 +194,7 @@ class ArgumentationEncoderDecoderRNN:
         self.train = theano.function([idxs_op, idxs_rr,
                                       mask_op_w, mask_rr_w,
                                       mask_op_s, mask_rr_s,
-                                      gold, lambda_w],
+                                      gold, lambda_w, p_dropout],
                                      loss, updates=updates, allow_input_downcast=True)
         print('...')
         test_predictions = lasagne.layers.get_output(self.network, deterministic=True).ravel()
@@ -195,10 +211,11 @@ class ArgumentationEncoderDecoderRNN:
         self.validate = theano.function([idxs_op, idxs_rr,
                                          mask_op_w, mask_rr_w,
                                          mask_op_s, mask_rr_s,
-                                         gold, lambda_w],
+                                         gold, lambda_w, p_dropout],
                                         [loss, test_acc])
 
         #attention for words, B x S x N
+        '''
         word_attention = lasagne.layers.get_output(l_attn_op_w)
         self.word_attention = theano.function([idxs_op,
                                                mask_op_w],
@@ -210,7 +227,7 @@ class ArgumentationEncoderDecoderRNN:
                                                 mask_op_w,
                                                 mask_op_s],
                                                 sentence_attention, allow_input_downcast=True)
-                
+        '''
         print('finished compiling...')
 
     def save(self, filename):
