@@ -21,7 +21,7 @@ stemmer = nltk.stem.SnowballStemmer('english')
 frame_parser = semafor.TCPClientSemaforParser()
 
 #embeddings_file = '/proj/nlp/corpora/GloVE/twitter/glove.twitter.27B.200d.txt.out.gensim'
-embeddings_file = '/proj/nlpdisk3/nlpusers/chidey/cmv/glove.twitter.27B.200d.txt.out.gensim'
+#embeddings_file = '/proj/nlpdisk3/nlpusers/chidey/cmv/glove.twitter.27B.200d.txt.out.gensim'
 cmv_pattern = re.compile('cmv:?', re.IGNORECASE)
 
 def cleanup(text, op=False):
@@ -110,10 +110,12 @@ def getSentenceMetadata(docs):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='preprocess CMV data')
     parser.add_argument('outfile')
+    parser.add_argument('embeddings_file')
     parser.add_argument('--root_replies', type=int, default=1)
     parser.add_argument('-d', '--dimension', type=int, default=200)
     parser.add_argument('--max_sentence_length', type=int, default=256)
-    parser.add_argument('--max_post_length', type=int, default=40)        
+    parser.add_argument('--max_post_length', type=int, default=40)
+
     args = parser.parse_args()
 
     print('loading data...')    
@@ -150,7 +152,7 @@ if __name__ == '__main__':
 
     val_op, val_rr, val_labels, val_mask_op_s, val_mask_rr_s, val_mask_op_w, val_mask_rr_w, indices = build_indices(heldout_op, heldout_pos, heldout_neg, indices=indices, max_sentence_length=args.max_sentence_length, max_post_length=args.max_post_length, mask=True,)
 
-    model = gensim.models.Doc2Vec.load_word2vec_format(embeddings_file, binary=False)
+    model = gensim.models.Doc2Vec.load_word2vec_format(args.embeddings_file, binary=False)
     #map embeddings from indices to their word vectors
     embeddings = map_embeddings(indices, model, args.dimension)
 
