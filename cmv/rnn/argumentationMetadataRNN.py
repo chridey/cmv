@@ -8,8 +8,6 @@ from cmv.rnn.layers import AverageWordLayer, AverageSentenceLayer, AttentionWord
 from cmv.rnn.lstm_layers import reshapeLSTMLayer
 from cmv.rnn.loss import margin_loss
 
-
-
 class ArgumentationMetadataRNN:
     def __init__(self,
                  sizes,

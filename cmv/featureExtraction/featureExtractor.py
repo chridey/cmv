@@ -65,7 +65,7 @@ class ArgumentFeatureExtractor(BaseFeatureExtractor):
     def getNonCausalPct(self, dataPoint):
         length = len(dataPoint.response.metadata)
         if not length:
-            return {self.functionFeatures[self.getCausalPct]: 0}
+            return {self.functionFeatures[self.getNonCausalPct]: 0}
         sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
                                                  wordUtils.noncausal_markers)
         return {self.functionFeatures[self.getNonCausalPct]: countValidConnectives(sentences)/length}
@@ -73,7 +73,7 @@ class ArgumentFeatureExtractor(BaseFeatureExtractor):
     def getCausalAltlexPct(self, dataPoint):
         length = len(dataPoint.response.metadata)
         if not length:
-            return {self.functionFeatures[self.getCausalPct]: 0}
+            return {self.functionFeatures[self.getCausalAltlexPct]: 0}
         sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
                                                  self.altlexHandler.causalAltlexes,
                                                  checkCache=True)
@@ -83,7 +83,7 @@ class ArgumentFeatureExtractor(BaseFeatureExtractor):
     def getNonCausalAltlexPct(self, dataPoint):
         length = len(dataPoint.response.metadata)
         if not length:
-            return {self.functionFeatures[self.getCausalPct]: 0}
+            return {self.functionFeatures[self.getNonCausalAltlexPct]: 0}
         sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
                                                   self.altlexHandler.nonCausalAltlexes)
         return {self.functionFeatures[self.getNonCausalAltlexPct]: countValidConnectives(sentences)/length}
@@ -91,7 +91,7 @@ class ArgumentFeatureExtractor(BaseFeatureExtractor):
     def getCausalScore(self, dataPoint):
         length = len(dataPoint.response.metadata)
         if not length:
-            return {self.functionFeatures[self.getCausalPct]: 0}
+            return {self.functionFeatures[self.getCausalScore]: 0}
         sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
                                                  self.altlexHandler.causalAltlexes,
                                                  checkCache=True)
