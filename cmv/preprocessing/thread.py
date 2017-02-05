@@ -12,11 +12,17 @@ class Post:
                 words.extend(sentence['words'])
         return words
     
-class DocumentData:
-    def __init__(self, title, originalPost, response):
-        #for each sentence, we want the original sentence as well as the sentence split into segments based on the altlex
-        self.title = Post(title)
-        self.originalPost = Post(originalPost)
+class Thread:
+    def __init__(self, response, originalPost=None, title=None):
         self.response = Post(response)
+
+        self.originalPost = None
+        if originalPost is not None:
+            self.originalPost = Post(originalPost)
+
+        self.title = None
+        if title is not None:
+            self.title = Post(title)
         
+
     

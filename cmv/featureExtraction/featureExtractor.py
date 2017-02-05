@@ -1,14 +1,5 @@
-import math
-
 import pandas as pd
-import numpy as np
 import nltk
-
-from altlex.featureExtraction.baseFeatureExtractor import BaseFeatureExtractor
-from altlex.utils import wordUtils
-
-from cmv.featureExtraction.altlexHandler import AltlexHandler, countValidConnectives
-from cmv.featureExtraction import config
 
 def calculate_interplay(op, rr):
     int_int = 1.*len(set(op) & set(rr))
@@ -16,191 +7,23 @@ def calculate_interplay(op, rr):
         return [0,0,0,0]
     return [int_int, int_int/len(set(rr)), int_int/len(set(op)), int_int/len(set(op) | set(rr))]
 
-class ArgumentFeatureExtractor(BaseFeatureExtractor):
+class ArgumentFeatureExtractor:
     '''features for an entire document'''
     def __init__(self,
-                 settings=config.defaultConfig,
-                 verbose=False,
-                 cache=True):
-        self.config = config.Config(settings)
-        
-        self.altlexHandler = AltlexHandler(**self.config.altlexSettings)
+                 settings=None
+                 verbose=False):
 
+        if settings is not None:
+            self.settings = settings
+        else:
+            self.settings = {'featureSettings': {'interplay': True}}
+            
         self.stopwords = set(nltk.corpus.stopwords.words('english'))
                 
-        self.validFeatures = {'causal_pct': self.getCausalPct,
-                              'noncausal_pct': self.getNonCausalPct,
-                              'causal_score': self.getCausalScore,
-                              'causal_altlex_pct': self.getCausalAltlexPct,
-                              'noncausal_altlex_pct': self.getNonCausalAltlexPct,
-                              'wordnet_response': self.getWordNetResponse,
-                              'verbnet_response': self.getVerbNetResponse,
-                              #title, all roots and arguments
-                              'wordnet_title_response_interaction': self.getWordNetTitleResponse,
-                              #OP, all roots and arguments
-                              'wordnet_post_response_interaction': self.getWordNetPostResponse,
-                              #title, all roots and arguments
-                              'verbnet_title_response_interaction': self.getVerbNetTitleResponse,
-                              #OP, all roots and arguments
-                              'verbnet_post_response_interaction': self.getVerbNetPostResponse,
-                              'framenet_response': self.getFrameNetResponse,
-                              'framenet_altlex_sum': self.getFrameNetAltlexSum,
-                              'interplay': self.getInterplay,
+        self.validFeatures = {'interplay': self.getInterplay,
                               }
-                              #'connective_patterns'
-                              #intersections
                               
         self.functionFeatures = dict((v,k) for k,v in self.validFeatures.items())
-
-        self.cache = {} if cache else None
-        
-    def getCausalPct(self, dataPoint):
-        length = len(dataPoint.response.metadata)
-        if not length:
-            return {self.functionFeatures[self.getCausalPct]: 0}
-        sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
-                                                 wordUtils.causal_markers)
-        return {self.functionFeatures[self.getCausalPct]: countValidConnectives(sentences)/length}
-
-    def getNonCausalPct(self, dataPoint):
-        length = len(dataPoint.response.metadata)
-        if not length:
-            return {self.functionFeatures[self.getNonCausalPct]: 0}
-        sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
-                                                 wordUtils.noncausal_markers)
-        return {self.functionFeatures[self.getNonCausalPct]: countValidConnectives(sentences)/length}
-    
-    def getCausalAltlexPct(self, dataPoint):
-        length = len(dataPoint.response.metadata)
-        if not length:
-            return {self.functionFeatures[self.getCausalAltlexPct]: 0}
-        sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
-                                                 self.altlexHandler.causalAltlexes,
-                                                 checkCache=True)
-        
-        return {self.functionFeatures[self.getCausalAltlexPct]: countValidConnectives(sentences)/length}
-    
-    def getNonCausalAltlexPct(self, dataPoint):
-        length = len(dataPoint.response.metadata)
-        if not length:
-            return {self.functionFeatures[self.getNonCausalAltlexPct]: 0}
-        sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
-                                                  self.altlexHandler.nonCausalAltlexes)
-        return {self.functionFeatures[self.getNonCausalAltlexPct]: countValidConnectives(sentences)/length}
-
-    def getCausalScore(self, dataPoint):
-        length = len(dataPoint.response.metadata)
-        if not length:
-            return {self.functionFeatures[self.getCausalScore]: 0}
-        sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
-                                                 self.altlexHandler.causalAltlexes,
-                                                 checkCache=True)
-        causal, noncausal = self.altlexHandler.causalScore(sentences, empty=False)
-        return {self.functionFeatures[self.getCausalScore] + '_causal' : causal/length,
-                self.functionFeatures[self.getCausalScore] + '_noncausal' : noncausal/length}
-    
-    #still use the lexical semantic features for interaction between title/OP and response
-    #but sum over cartesian product and then L2 normalize
-
-    def getWordNetResponse(self, dataPoint):
-        sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
-                                                    self.altlexHandler.causalAltlexes,
-                                                    checkCache=True)
-        features = self.altlexHandler.getWordNetFullSentence(sentences)
-        return {self.functionFeatures[self.getWordNetResponse] + '_' + k:v for (k,v) in features.items()}
-        
-    def getVerbNetResponse(self, dataPoint):
-        sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
-                                                    self.altlexHandler.causalAltlexes,
-                                                    checkCache=True)
-        features = self.altlexHandler.getVerbNetFullSentence(sentences)
-        return {self.functionFeatures[self.getWordNetResponse] + '_' + k:v for (k,v) in features.items()}
-    
-    def getWordNetTitleResponse(self, dataPoint):
-        
-        sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
-                                                    self.altlexHandler.causalAltlexes,
-                                                    checkCache=True)
-        title = self.altlexHandler.getConnectiveSentences(dataPoint.title.metadata,
-                                                    self.altlexHandler.causalAltlexes)
-        
-        response_features = self.altlexHandler.getWordNetFullSentence(sentences, normalize=False)
-        title_features = self.altlexHandler.getWordNetFullSentence(title, normalize=False)
-        ret = {}
-        for rk,rv in response_features.items():
-            for tk,tv in title_features.items():
-                ret[rk + '_' + tk] = rv*tv
-        l2 = math.sqrt(sum(i**2 for i in ret.values()))
-
-        return {self.functionFeatures[self.getWordNetTitleResponse] +'_' + k:v/l2 for (k,v) in ret.items()}
-    
-    def getVerbNetTitleResponse(self, dataPoint):
-        sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
-                                                    self.altlexHandler.causalAltlexes,
-                                                    checkCache=True)
-        title = self.altlexHandler.getConnectiveSentences(dataPoint.title.metadata,
-                                                    self.altlexHandler.causalAltlexes)
-        
-        response_features = self.altlexHandler.getVerbNetFullSentence(sentences, normalize=False)
-        title_features = self.altlexHandler.getVerbNetFullSentence(title, normalize=False)
-        ret = {}
-        for rk,rv in response_features.items():
-            for tk,tv in title_features.items():
-                ret[rk + '_' + tk] = rv*tv
-        l2 = math.sqrt(sum(i**2 for i in ret.values()))
-
-        return {self.functionFeatures[self.getVerbNetTitleResponse] +'_' + k:v/l2 for (k,v) in ret.items()}
-    
-    def getWordNetPostResponse(self, dataPoint):
-        sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
-                                                    self.altlexHandler.causalAltlexes,
-                                                    checkCache=True)
-        op = self.altlexHandler.getConnectiveSentences(dataPoint.originalPost.metadata,
-                                                        self.altlexHandler.causalAltlexes)
-        
-        response_features = self.altlexHandler.getWordNetFullSentence(sentences, normalize=False)
-        op_features = self.altlexHandler.getWordNetFullSentence(op, normalize=False)
-        ret = {}
-        for rk,rv in response_features.items():
-            for tk,tv in op_features.items():
-                ret[rk + '_' + tk] = rv*tv
-        l2 = math.sqrt(sum(i**2 for i in ret.values()))
-
-        return {self.functionFeatures[self.getWordNetPostResponse] +'_' + k:v/l2 for (k,v) in ret.items()}
-    
-    def getVerbNetPostResponse(self, dataPoint):
-        sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
-                                                    self.altlexHandler.causalAltlexes,
-                                                    checkCache=True)
-        op = self.altlexHandler.getConnectiveSentences(dataPoint.originalPost.metadata,
-                                                        self.altlexHandler.causalAltlexes)
-        
-        response_features = self.altlexHandler.getVerbNetFullSentence(sentences, normalize=False)
-        op_features = self.altlexHandler.getVerbNetFullSentence(op, normalize=False)
-        ret = {}
-        for rk,rv in response_features.items():
-            for tk,tv in op_features.items():
-                ret[rk + '_' + tk] = rv*tv
-        l2 = math.sqrt(sum(i**2 for i in ret.values()))
-
-        return {self.functionFeatures[self.getVerbNetPostResponse] +'_' + k:v/l2 for (k,v) in ret.items()}
-    
-    def getFrameNetResponse(self, dataPoint):
-        sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
-                                                            self.altlexHandler.causalAltlexes,
-                                                            checkCache=True)
-        causal_sum,anticausal_sum = self.altlexHandler.getFrameNetResponseSum(sentences)
-        return {self.functionFeatures[self.getFrameNetResponse] + '_causal': causal_sum,
-                self.functionFeatures[self.getFrameNetResponse] + '_anticausal': anticausal_sum}
-
-    
-    def getFrameNetAltlexSum(self, dataPoint):
-        sentences = self.altlexHandler.getConnectiveSentences(dataPoint.response.metadata,
-                                                        self.altlexHandler.causalAltlexes,
-                                                        checkCache=True)
-        causal_sum,anticausal_sum = self.altlexHandler.getFrameNetAltlexSum(sentences)
-        return {self.functionFeatures[self.getFrameNetAltlexSum] + '_causal': causal_sum,
-                self.functionFeatures[self.getFrameNetAltlexSum] + '_anticausal': anticausal_sum}
 
     def getInterplay(self, dataPoint):
         op_all = set(dataPoint.originalPost.getAllWords(True))
@@ -219,13 +42,18 @@ class ArgumentFeatureExtractor(BaseFeatureExtractor):
         return zip(keys, all_interplay + stop_interplay + content_interplay)
         
     def addFeatures(self, dataPoint, featureSettings=None):
-        features = super(ArgumentFeatureExtractor, self).addFeatures(dataPoint,
-                                                                     featureSettings)
+        '''add features for the given dataPoint according to which are
+        on or off in featureList'''
 
-        if self.cache is not None:
-            self.cache = {}
-
-        self.altlexHandler.clearCache()
+        features = {}
+        if featureSettings is None:
+            featureSettings = self.settings['featureSettings']
+            
+        for featureName in featureSettings:
+            assert(featureName in self.validFeatures)
+            if featureSettings[featureName]:
+                features.update(self.validFeatures[featureName](dataPoint))
+        return features
         
         return features
 
