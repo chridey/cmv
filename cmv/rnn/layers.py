@@ -3,10 +3,6 @@ import theano.tensor as T
 import numpy as np
 import lasagne
 
-#averaging layer
-#bidirectional layer
-#attention layer
-
 # compute vector average
 class AverageWordLayer(lasagne.layers.MergeLayer):
     def __init__(self, incomings, **kwargs):
@@ -158,30 +154,6 @@ class WeightedAverageSentenceLayer(lasagne.layers.MergeLayer):
     def get_output_shape_for(self, input_shapes):
         return (None, input_shapes[0][-1])
         
-#incomplete, only works for very specific case    
-class BroadcastLayer(lasagne.layers.MergeLayer):
-    def __init__(self, incomings, **kwargs):
-        super(BroadcastLayer, self).__init__(incomings, **kwargs)
-
-    def get_output_for(self, inputs, **kwargs):
-        return T.ones_like(inputs[1]) * inputs[0][:, None, :]
-
-    def get_output_shape_for(self, input_shapes, **kwargs):
-        return input_shapes[1]
-
-class CosineSimilarityLayer(lasagne.layers.MergeLayer):
-    def __init__(self, incomings, **kwargs):
-        super(CosineSimilarityLayer, self).__init__(incomings, **kwargs)
-
-    def get_output_shape_for(self, input_shapes, **kwargs):
-        return (input_shapes[0][0], 1)
-
-    def get_output_for(self, inputs, **kwargs):
-        cosine = (inputs[0]*inputs[1]).sum(axis=-1)/(T.sqrt(T.sum(inputs[0]**2,
-                                                                  axis=-1) * T.sum(inputs[1]**2,
-                                                                                   axis=-1)))
-        return cosine[:, None]
-
 class HighwayLayer(lasagne.layers.Layer):
     def __init__(self, incoming, num_units, W_h=lasagne.init.GlorotUniform(),
                  b_h=lasagne.init.Constant(0.), W_t=lasagne.init.GlorotUniform(),
