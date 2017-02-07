@@ -7,7 +7,7 @@ from sklearn.metrics import roc_auc_score
 
 from cmv.rnn.persuasiveInfluenceRNN import PersuasiveInfluenceRNN
 
-class PersuasiveInfluenceClassifer(BaseEstimator):
+class PersuasiveInfluenceClassifier(BaseEstimator):
     def __init__(self, V, d, max_post_length, max_sentence_length, embeddings=None,
                  rd=100,
                  GRAD_CLIP=100,

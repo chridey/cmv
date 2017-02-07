@@ -8,7 +8,7 @@ import collections
 import numpy as np
 from sklearn.metrics import precision_recall_fscore_support, roc_auc_score
 
-from cmv.rnn.persuasiveInfluenceClassifer import PersuasiveInfluenceClassifier
+from cmv.rnn.persuasiveInfluenceClassifier import PersuasiveInfluenceClassifier
     
 def prepare(data, frames, discourse, sentiment, biases):
     kwargs = dict(V=data['embeddings'].shape[0],
@@ -17,7 +17,7 @@ def prepare(data, frames, discourse, sentiment, biases):
                   max_sentence_length=data['train_mask_rr_w'].shape[2],
                   embeddings=data['embeddings'])
 
-    training_inputs = [data['train_rr_words']], data['train_mask_rr_w'], data['train_mask_rr_s']]
+    training_inputs = [data['train_rr_words'], data['train_mask_rr_w'], data['train_mask_rr_s']]
     val_inputs = [data['val_rr_words'], data['val_mask_rr_w'], data['val_mask_rr_s']]
 
     if frames:

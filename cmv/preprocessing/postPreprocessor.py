@@ -3,7 +3,7 @@ import re
 from spacy.en import English
 
 from cmv.preprocessing.preprocess import normalize_from_body
-from cmv.preprocessing.preprocess import Metadata
+from cmv.preprocessing.metadata import Metadata
 from cmv.preprocessing.discourseClassifier import DiscourseClassifier
 from cmv.preprocessing.frameClassifier import FrameClassifier
 from cmv.preprocessing.sentimentClassifier import SentimentClassifier

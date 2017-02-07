@@ -79,7 +79,7 @@ class IndexGenerator:
                                                                     max_sentence_length=self.max_sentence_length,
                                                                     max_post_length=self.max_post_length,
                                                                     mask=True,
-                                                                    add=self.min_count==0 or key != 'words'))
+                                                                    add=self.min_count==0 or key != 'words')
                     if key == 'words':
                         self._data['{}_mask_{}_s'.format(subset, which)] = mask_s
                         self._data['{}_mask_{}_w'.format(subset, which)] = mask

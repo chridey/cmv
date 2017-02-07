@@ -10,7 +10,7 @@ def calculate_interplay(op, rr):
 class ArgumentFeatureExtractor:
     '''features for an entire document'''
     def __init__(self,
-                 settings=None
+                 settings=None,
                  verbose=False):
 
         if settings is not None:

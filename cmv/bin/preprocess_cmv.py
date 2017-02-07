@@ -3,8 +3,7 @@ import argparse
 
 from cmv.preprocessing.metadataGenerator import MetadataGenerator
 from cmv.preprocessing.malleabilityMetadataGenerator import MalleabilityMetadataGenerator
-from cmv.preprocessing.dataIterator import DataIterator
-from cmv.preprocessing.pairedDataIterator import PairedDataIterator
+from cmv.preprocessing.dataIterator import DataIterator, PairedDataIterator
 from cmv.preprocessing.indexGenerator import IndexGenerator
 
 if __name__ == '__main__':
