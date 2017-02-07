@@ -19,7 +19,7 @@ class PostPreprocessor:
 
         self.metadata = Metadata()
         
-        self.discourseclassifier = None 
+        self.discourseClassifier = None 
         if discourse:
             self.discourseClassifier = DiscourseClassifier()
 
@@ -50,11 +50,11 @@ class PostPreprocessor:
                 split_sentences.append(sent)
 
         processed_post = self.metadata.addMetadata(split_sentences)
-        if self.discourse:
+        if self.discourseClassifier:
             processed_post.update(self.discourseClassifier.addDiscourse(processed_post))
-        if self.frames:
+        if self.frameClassifier:
             processed_post.update(self.frameClassifier.addFrames(processed_post))
-        if self.sentiment:
+        if self.sentimentClassifier:
             processed_post.update(self.sentimentClassifier.addSentiment(processed_post))
 
         return processed_post

@@ -1,12 +1,17 @@
 from cmv.preprocessing.postPreprocessor import PostPreprocessor
 
 class MalleabilityMetadataGenerator:
-    def __init__(self, train_filename, val_filename, num_responses=2**32, extend=True):
+    def __init__(self, train_filename, val_filename, num_responses=2**32, extend=True,
+                 discourse=True, frames=True, sentiment=False):
         self.train_filename = train_filename
         self.val_filename = val_filename
         self.num_responses = num_responses
         self.extend = extend
         self.border = 'INTERMEDIATE_DISCUSSION'
+
+        self.discourse = discourse
+        self.frames = frames
+        self.sentiment = sentiment
         
         self._data = None
         
@@ -39,7 +44,9 @@ class MalleabilityMetadataGenerator:
         
         for datum in data:
             label = bool(datum['delta_label'])
-            text = PostProcessor(datum['selftext'], op=True).processedData
+            text = PostProcessor(datum['selftext'], op=True,
+                                 discourse=self.discourse, frames=self.frames,
+                                 sentiment=self.sentiment).processedData
             if label:
                 pos_text.append([text])
             else:

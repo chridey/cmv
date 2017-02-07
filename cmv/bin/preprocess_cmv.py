@@ -14,6 +14,10 @@ if __name__ == '__main__':
     parser.add_argument('--malleability', action='store_true')
     parser.add_argument('--load_metadata')
     parser.add_argument('--save_metadata')
+
+    parser.add_argument('--discourse', action='store_true')
+    parser.add_argument('--frames', action='store_true')    
+    parser.add_argument('--sentiment', action='store_true')
     
     parser.add_argument('--indices')
     parser.add_argument('--embeddings')
@@ -32,7 +36,9 @@ if __name__ == '__main__':
         if args.malleability:
             generator = MalleabilityMetadataGenerator
 
-        metadata = generator(args.trainfile, args.testfile).data
+        metadata = generator(args.trainfile, args.testfile, extend=not args.paired,
+                             discourse=args.discourse, frames=args.frames,
+                             sentiment=args.sentiment).data
 
     if args.save_metadata:
         with open(args.save_metadata, 'w') as f:

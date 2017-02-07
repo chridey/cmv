@@ -11,11 +11,11 @@ class Metadata(object):
                         dependencies=[],
                         ner=[],
                         pos=[])                    
-                    
+
         for parsed_sentence in parsed_sentences:
-            metadata['original'].append(unicode(parsed_sentence))
+            metadata['original'].append(unicode(parsed_sentence.string))
             offset = parsed_sentence[0].i
-            empty = {i for (i,word) in enumerate(sent) if not len(word.string.strip())}
+            empty = {i for (i,word) in enumerate(parsed_sentence) if not len(word.string.strip())}
 
             words = []
             lemmas = []
@@ -29,9 +29,9 @@ class Metadata(object):
                 if not len(word.string.strip()):
                     continue
 
-                words.append(unicode(word))
+                words.append(unicode(word.string))
                 lemmas.append(word.lemma_)
-                stems.append(self.stemmer.stem(unicode(word)))
+                stems.append(self.stemmer.stem(unicode(word.string)))
                 pos.append(word.tag_)
                 ner.append('O')
                 
