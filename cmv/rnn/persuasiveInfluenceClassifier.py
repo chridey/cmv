@@ -125,12 +125,12 @@ class PersuasiveInfluenceClassifier(BaseEstimator):
                 auc_score = roc_auc_score(zip(*X_heldout)[:-1], scores)
                 if self.verbose:
                     print('{} ROC AUC: {}'.format(outputfile, auc_score))
-                if score > best:
-                    best = score
+                if auc_score > best:
+                    best = auc_score
                     best_params = self.classifier.get_params()
 
             if self.verbose:
-                print(r, epoch, cost)
+                print(epoch_cost)
 
         if best > 0:
             self.classifier.set_params(best_params)
