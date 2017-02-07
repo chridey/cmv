@@ -1,3 +1,6 @@
+import json
+import bz2
+
 from cmv.preprocessing.postPreprocessor import PostPreprocessor
 
 class MalleabilityMetadataGenerator:
@@ -30,8 +33,8 @@ class MalleabilityMetadataGenerator:
         train = self._load_file(self.train_filename)
         val = self._load_file(self.val_filename)
 
-        train_pos, train_neg = processData(train)
-        val_pos, val_neg = processData(val)
+        train_pos, train_neg = self.processData(train)
+        val_pos, val_neg = self.processData(val)
 
         return dict(train_pos=train_pos,
                     train_neg=train_neg,
@@ -42,14 +45,14 @@ class MalleabilityMetadataGenerator:
         neg_text = []
         pos_text = []
         
-        for datum in data:
+        for i,datum in enumerate(data):
             label = bool(datum['delta_label'])
-            text = PostProcessor(datum['selftext'], op=True,
+            text = PostPreprocessor(datum['selftext'], op=True,
                                  discourse=self.discourse, frames=self.frames,
                                  sentiment=self.sentiment).processedData
             if label:
-                pos_text.append([text])
+                pos_text.append(text)
             else:
-                neg_text.append([text])
+                neg_text.append(text)
 
         return pos_text, neg_text

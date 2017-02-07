@@ -49,6 +49,8 @@ class MetadataGenerator:
                           val_neg=val_neg,
                           val_neg_indices=val_neg_indices)
         
+        return self._data
+    
     def processData(self, pairs):
         op = []
         titles = []
@@ -58,7 +60,6 @@ class MetadataGenerator:
         neg_indices = []
         
         for pair_index,pair in enumerate(pairs):
-            print(pair_index)
             op.append(PostPreprocessor(pair['op_text'], op=True,
                                        discourse=False, frames=False).processedData)
 

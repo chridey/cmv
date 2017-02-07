@@ -34,16 +34,16 @@ class PostPreprocessor:
         self._processedData = None
         
     def cleanup(self, text):
-
+        
         cleaned_text = normalize_from_body(text, op=self.op, lower=self.lower)
         cleaned_text = self.cmv_pattern.sub('', cleaned_text)
         cleaned_text = cleaned_text.replace('\t', ' ')
-    
+
         parsed_text = [self.nlp(unicode(i)) for i in cleaned_text.split('\n')]
         return parsed_text
         
     def preprocess(self, text):
-        parsed_text = self.cleanup(text)
+        parsed_text = list(self.cleanup(text))
         split_sentences = []
         for paragraph in parsed_text:
             for sent in paragraph.sents:

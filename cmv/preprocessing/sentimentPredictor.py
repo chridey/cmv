@@ -11,7 +11,7 @@ class SentimentPredictor:
         words = ' '.join(words)
         words = re.sub(r'[^\x00-\x7f]',r' ',words)
 
-        output = nlp.annotate(str(words),
+        output = self.nlp.annotate(str(words),
                               properties={'annotators': 'sentiment',
                                           'outputFormat': 'json',
                                           'tokenize.whitespace': True

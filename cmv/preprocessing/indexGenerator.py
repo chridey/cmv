@@ -1,3 +1,4 @@
+import json
 import collections
 
 import gensim
@@ -12,14 +13,14 @@ class IndexGenerator:
                  dimension=0,
                  indices=None):
         
-        self.train = iteratorType(metadata, 'train')
-        self.val = iteratorType(metadata, 'val')
+        self.train = iteratorType(metadata, ['train'])
+        self.val = iteratorType(metadata, ['val'])
          
         self.embeddings = embeddings
         self.min_count = min_count
         self.lower = lower
-        self.max_sentence_length
-        self.max_post_length
+        self.max_sentence_length = max_sentence_length
+        self.max_post_length = max_post_length
         self.dimension = dimension
         
         self._indices = indices
@@ -39,17 +40,17 @@ class IndexGenerator:
         return self._indices
 
     def _map_embeddings(self):
-        embeddings_array = [None] * len(self._indices)
+        embeddings_array = [None] * len(self._indices['words'])
         if self._model is None:
             self._model = {}
             if self.embeddings is not None:
                 self._model = gensim.models.Doc2Vec.load_word2vec_format(self.embeddings, binary=False)
 
-        for word in self._indices:
+        for word in self._indices['words']:
             if word in self._model:
-                embeddings_array[self._indices[word]] = self._model[word]
+                embeddings_array[self._indices['words'][word]] = self._model[word]
             else:
-                embeddings_array[self._indices[word]] = np.random.uniform(-1, 1, (self.dimension,))
+                embeddings_array[self._indices['words'][word]] = np.random.uniform(-1, 1, (self.dimension,))
                 
         return np.array(embeddings_array)
     
@@ -69,13 +70,15 @@ class IndexGenerator:
                 data = self.val
                 
             for which in data.types:
+                print(which)
                 f = data.responses
                 if which == 'op':
                     f = data.originalPosts
 
                 for key in data.keys_3d:
-                    data['{}_{}_{}'.format(subset, which, key)], mask, mask_s = utils.build_indices(f(key,self.lower),
-                                                                    indices=indices[key],
+                    self._data['{}_{}_{}'.format(subset, which, key)], mask_s, mask = utils.build_indices(f(key,
+                                                                                                            self.lower),
+                                                                    indices=self._indices[key],
                                                                     max_sentence_length=self.max_sentence_length,
                                                                     max_post_length=self.max_post_length,
                                                                     mask=True,
@@ -86,7 +89,7 @@ class IndexGenerator:
 
                 for key in self.train.keys_2d:
                     data['{}_{}_{}'.format(subset, which, key)] = utils.build_indices_2d(f(key,self.lower),
-                                                                                         indices=indices[key],
+                                                                                         indices=self._indices[key],
                                                                                          max_length=self.max_post_length)
             
         self._data['embeddings'] = self._map_embeddings()

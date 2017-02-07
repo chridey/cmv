@@ -52,7 +52,8 @@ def prepare(data, frames, discourse, sentiment, biases):
         training_inputs += [np.array(biases[0]).reshape(len(biases[0]),1)]
         val_inputs += [np.array(biases[1]).reshape(len(biases[1]),1)]
         kwargs.update(dict(add_biases=True))
-        
+
+    print([i.shape for i in training_inputs])
     training = np.array(zip(*training_inputs))
     validation = np.array(zip(*val_inputs))
 

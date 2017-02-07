@@ -21,6 +21,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--indices')
     parser.add_argument('--embeddings')
+    parser.add_argument('--dimension', type=int, default=100)
     parser.add_argument('--min_count', type=int, default=0)
     parser.add_argument('--lower', action='store_true')
     parser.add_argument('--max_sentence_length', type=int, default=256)
@@ -49,8 +50,9 @@ if __name__ == '__main__':
         if args.paired:
             iterator = PairedDataIterator
 
-        generator = IndexGenerator(iterator, embeddings=args.embeddings,
+        generator = IndexGenerator(iterator, metadata, embeddings=args.embeddings,
                                    min_count=args.min_count, lower=args.lower,
+                                   dimension=args.dimension,
                                    max_sentence_length=args.max_sentence_length,
                                    max_post_length=args.max_post_length)
 

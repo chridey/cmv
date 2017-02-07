@@ -27,38 +27,42 @@ class FrameClassifier(object):
         self.frame_parser = frame_parser
         if frame_parser is None:
             self.frame_parser = semafor.TCPClientSemaforParser()
-        self.verbose = verbose
+        self.verbose = True
         
     def addFrames(self, preprocessed_post):
         metadata = dict(frames=[])
-        for i in len(preprocessed_post['words']):
-            conll_string = ''
-            for j in len(preprocessed_post['words'][i]):
+        print(preprocessed_post['words'], len(preprocessed_post['words']))
+        conll_string = ''        
+        for i in range(len(preprocessed_post['words'])):
+            for j in range(len(preprocessed_post['words'][i])):
                 word = preprocessed_post['words'][i][j]
                 pos = preprocessed_post['words'][i][j]
                 dep,head = preprocessed_post['dependencies'][i][j]
                 
                 conll_string += to_conll(j, word, pos, head, dep)
-                conll_string += '\n'
+            
             conll_string += '\n'
+
+        if self.verbose:
+            print (conll_string)
             
         if len(conll_string.strip()):
-            frames = frame_parser.get_frames(conll_string)
+            frames = self.frame_parser.get_frames(conll_string)
             
             if self.verbose:
-                print(len(frames), len(preprocessed_post['words'][i]))
-            assert(len(frames) == len(preprocessed_post['words'][i]))
+                print(len(frames), len(preprocessed_post['words']))
+            assert(len(frames) == len(preprocessed_post['words']))
 
-            for index,sent_frames in enumerate(frames):
+            for dindex,sent_frames in enumerate(frames):
                 if self.verbose:
                     print(sent_frames.tokens)
-                    print(preprocessed_post['words'][index])
-                    print(len(sent_frames.tokens), len(preprocessed_post['words'][index]))
-                assert(len(sent_frames.tokens) == len(preprocessed_post['words'][index]))
+                    print(preprocessed_post['words'][dindex])
+                    print(len(sent_frames.tokens), len(preprocessed_post['words'][dindex]))
+                assert(len(sent_frames.tokens) == len(preprocessed_post['words'][dindex]))
 
                 metadata['frames'].append([None for i in range(len(sent_frames.tokens))])
                 for frame,windex in frames[dindex].iterTargets():
-                    metadata['frames'][index][windex] = frame
+                    metadata['frames'][dindex][windex] = frame
         else:
             if self.verbose:
                 print('conll_string is empty')

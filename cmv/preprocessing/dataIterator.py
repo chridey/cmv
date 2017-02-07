@@ -31,11 +31,20 @@ class DataIterator:
         for thread,label in self.iterPosts():
             yield label
 
+    @property
+    def types(self):
+        keys = self.data.keys()
+        ret = {i.replace('train_', '').replace('val_', '').replace('_indices', '') for i in keys}
+        if 'pos' in ret or 'neg' in ret:
+            ret.add('rr')
+            ret -= {'pos', 'neg'}
+        return ret
+            
     def _get_keys(self):
         self._keys_2d = []
         self._keys_3d = []
         g = self.iterPosts()
-        thread = next(g)
+        thread,_ = next(g)
         for key in thread.response.keys:
             if type(thread.response.metadata[key][0]) == str:
                 self._keys_2d.append(key)

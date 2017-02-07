@@ -2,7 +2,9 @@ import sys
 import subprocess
 import tempfile
 import re
+import os
 
+BIN_DIR = os.path.join(os.path.split(__file__)[0], '../config/2Taggers')
 class DiscourseParser:
     tab_re = re.compile("\t+")
     punct_sub = re.compile('[^a-zA-Z]*([a-zA-Z]+)[^a-zA-Z]*')
@@ -75,22 +77,27 @@ class DiscourseParser:
             else:
                 relation, start, end, arg1_start, arg1_end, arg2_start, arg2_end, sentence = self.tab_re.split(line)
                 if int(arg1_start) != -1:
-                    connective, connective_start = getConnective(int(start), int(arg1_start),
-                                                                 int(arg1_end), int(arg2_start),
-                                                                 int(arg2_end), sentence)
+                    connective, connective_start = self.getConnective(int(start), int(arg1_start),
+                                                                    int(arg1_end), int(arg2_start),
+                                                                    int(arg2_end), sentence)
                     intra_sentence[start].append((relation, connective, connective_start))
                     
         return inter_sentence, [intra_sentence[i] for i in sorted(intra_sentence.keys())]
     
     def parse(self, document):
-        infile = tempfile.NamedTemporaryFile('/tmp/discourse_input')
+        infile = tempfile.NamedTemporaryFile('w')
         infile.write(document)
         outfile = '/tmp/discourse_output'
-        
+
+        curdir = os.getcwd()
+        os.chdir(BIN_DIR)
         p = subprocess.Popen(self.command.split() + [infile.name, outfile])
+        
         out, err = p.communicate()
 
+        os.chdir(curdir)
+        
         with open(outfile) as f:
             discourse_data = f.read()
 
-        return self.processDiscourse(self, discourse_data, len(document.split('\n')))
+        return self.processDiscourse(discourse_data, len(document.split('\n')))

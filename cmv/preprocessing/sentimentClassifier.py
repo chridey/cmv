@@ -4,7 +4,7 @@ class SentimentClassifier:
     def __init__(self, sentiment_predictor=None, verbose=False):
         self.sentiment_predictor = sentiment_predictor
         if sentiment_predictor is None:
-            sentiment_predictor = SentimentPredictor()
+            self.sentiment_predictor = SentimentPredictor()
        
     def addSentiment(self, preprocessed_post):
         metadata = dict(sentiment=[])

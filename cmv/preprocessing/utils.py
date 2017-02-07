@@ -77,12 +77,15 @@ def make_post_indices_and_masks(post, indices, max_sentence_length, max_post_len
 def build_indices(data, indices=None, mask=False,
                   max_sentence_length=MAX_SENTENCE_LENGTH,
                   max_post_length=MAX_POST_LENGTH, add=True):
-    if indices is None or len(indices) == 0:
+    if indices is None:
         indices = {None:0}
-
+    if len(indices) == 0:
+        indices[None] = 0
+        
     ret = []
     mask = []
     mask_s = []
+    
     for datum in data:
         curr_indices, indices_mask_s, indices_mask = make_post_indices_and_masks(datum,
                                                                                  indices,
@@ -97,8 +100,10 @@ def build_indices(data, indices=None, mask=False,
     return ret, mask, mask_s
 
 def build_indices_2d(data, indices=None, max_length=MAX_SENTENCE_LENGTH, add=True):
-    if indices is None or len(indices) == 0:
+    if indices is None:
         indices = {None:0}
+    if len(indices) == 0:
+        indices[None] = 0
 
     ret = []
 

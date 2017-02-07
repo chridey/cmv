@@ -13,8 +13,13 @@ class Metadata(object):
                         pos=[])                    
 
         for parsed_sentence in parsed_sentences:
+            try:
+                offset = parsed_sentence[0].i
+            except IndexError:
+                continue
+            
             metadata['original'].append(unicode(parsed_sentence.string))
-            offset = parsed_sentence[0].i
+            
             empty = {i for (i,word) in enumerate(parsed_sentence) if not len(word.string.strip())}
 
             words = []
