@@ -69,8 +69,7 @@ class PersuasiveInfluenceClassifier(BaseEstimator):
         
     def fit(self, X, y):
         if self.verbose:
-            print(self.dropout, self.lambda_w, 
-                  self.freeze_words, self.num_hidden, self.word_dropout)
+            print(self.dropout, self.lambda_w, self.num_layers, self.word_dropout)
             print(collections.Counter(y))
 
         if self.early_stopping_heldout:
