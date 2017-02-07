@@ -53,7 +53,9 @@ def prepare(data, frames, discourse, sentiment, biases):
         val_inputs += [np.array(biases[1]).reshape(len(biases[1]),1)]
         kwargs.update(dict(add_biases=True))
 
-    print([i.shape for i in training_inputs])
+    training_inputs.append(data['train_labels'])
+    val_inputs.append(data['val_labels'])
+        
     training = np.array(zip(*training_inputs))
     validation = np.array(zip(*val_inputs))
 
@@ -69,11 +71,11 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=100)
 
     parser.add_argument('--lambda_w', type=float, default=0)
-    parser.add_argument('-r', '--recurrent_dimension', type=int, default=100)
-    parser.add_argument('-n', '--num_layers', type=int, default=1)
-    parser.add_argument('-l', '--learning_rate', type=int, default=0.01)
-    parser.add_argument('--word_dropout', type=float, default=.25)
-    parser.add_argument('--dropout', type=float, default=.25)
+    parser.add_argument('-r', '--recurrent_dimension', type=int, default=0)
+    parser.add_argument('-n', '--num_layers', type=int, default=0)
+    parser.add_argument('-l', '--learning_rate', type=int, default=0)
+    parser.add_argument('--word_dropout', type=float, default=0)
+    parser.add_argument('--dropout', type=float, default=0)
     
     parser.add_argument('--discourse', default=0)
     parser.add_argument('--frames', type=int, default=0)
@@ -140,7 +142,7 @@ if __name__ == '__main__':
         
     dropouts = [0.25, 0, 0.5, 0.75]
     if args.dropout:
-        dropouts = args.dropout
+        dropouts = [args.dropout]
         
     for lambda_w in lambda_ws: 
         for num_layers in num_layerses:
@@ -148,6 +150,12 @@ if __name__ == '__main__':
                 for learning_rate in learning_rates:
                     for word_dropout in word_dropouts:
                         for dropout in dropouts:
+                            kwargs.update(dict(lambda_w=lambda_w,
+                                               num_layers=num_layers,
+                                               rd=recurrent_dimension,
+                                               learning_rate=learning_rate,
+                                               word_dropout=word_dropout,
+                                               dropout=dropout))
                             classifier = PersuasiveInfluenceClassifier(**kwargs)
                             classifier.fit(training, y)
                             classifier.save('{}.{}.{}.{}.{}.{}.{}.{}.{}'.format(args.outputfile,
@@ -157,3 +165,11 @@ if __name__ == '__main__':
                                                                         num_layers,
                                                                         recurrent_dimension,
                                                                         learning_rate))
+                            scores = classifier.decision_function(validation, val_y)
+                            np.save('{}.{}.{}.{}.{}.{}.{}.{}.{}.scores'.format(args.outputfile,
+                                                                        lambda_w,
+                                                                        word_dropout,
+                                                                        dropout,
+                                                                        num_layers,
+                                                                        recurrent_dimension,
+                                                                        learning_rate), scores)

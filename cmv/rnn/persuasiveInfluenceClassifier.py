@@ -24,6 +24,7 @@ class PersuasiveInfluenceClassifier(BaseEstimator):
                  add_biases=False,
                  highway=True,
                  word_dropout=0,
+                 dropout=0,
                  batch_size=100,
                  num_epochs=30,
                  verbose=False,
@@ -55,17 +56,20 @@ class PersuasiveInfluenceClassifier(BaseEstimator):
                                                  d_frames, V_intra, d_intra, d_inter, V_sentiment, d_sentiment,
                                                  add_biases, highway)
 
-        self.lambda_w = lambda_w
-        self.word_dropout = word_dropout
         self.batch_size = batch_size
         self.num_epochs = num_epochs
+
+        self.lambda_w = lambda_w
+        self.word_dropout = word_dropout
+        self.dropout = dropout
+        
         self.verbose = verbose
         self.early_stopping_heldout = early_stopping_heldout
         self.balance = balance
         
     def fit(self, X, y):
         if self.verbose:
-            print(self.dropout, self.lambda_w, self.class_weights,
+            print(self.dropout, self.lambda_w, 
                   self.freeze_words, self.num_hidden, self.word_dropout)
             print(collections.Counter(y))
 
@@ -77,7 +81,7 @@ class PersuasiveInfluenceClassifier(BaseEstimator):
             print('Train Fold: {} Heldout: {}'.format(collections.Counter(y), collections.Counter(y_heldout)))
 
         data = zip(*X)
-        X = data[0]
+        X = np.array(data[0])
         num_batches = X.shape[0] // self.batch_size
         best = 0
         training = np.array(zip(*data))
@@ -96,7 +100,8 @@ class PersuasiveInfluenceClassifier(BaseEstimator):
                 batch = training[idxs[s:e]]
                 inputs = zip(*batch)
 
-                print('Y Batch:', collections.Counter(y_batch))
+                if self.verbose:
+                    print('Y Batch:', collections.Counter(inputs[-1]))
 
                 if self.word_dropout:
                     inputs[1] = inputs[1]*(np.random.rand(*(np.array(inputs[1]).shape)) < self.word_dropout)
@@ -121,9 +126,9 @@ class PersuasiveInfluenceClassifier(BaseEstimator):
                 auc_score = roc_auc_score(zip(*X_heldout)[:-1], scores)
                 if self.verbose:
                     print('{} ROC AUC: {}'.format(outputfile, auc_score))
-                    if score > best:
-                        best = score
-                        best_params = self.classifier.get_params()
+                if score > best:
+                    best = score
+                    best_params = self.classifier.get_params()
 
             if self.verbose:
                 print(r, epoch, cost)

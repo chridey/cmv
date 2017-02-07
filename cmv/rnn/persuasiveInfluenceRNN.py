@@ -167,9 +167,6 @@ class PersuasiveInfluenceRNN:
 
         print('compiling...')
         train_outputs = loss
-        if discourse_predictions:
-            train_outputs = [loss, l_lstm_rr_s.class_counts]
-            
         self.train = theano.function(inputs + [gold, lambda_w, p_dropout, weights],
                                      train_outputs,
                                       updates=updates,
@@ -177,8 +174,6 @@ class PersuasiveInfluenceRNN:
                                       on_unused_input='warn')
         print('...')
         test_predictions = lasagne.layers.get_output(self.network, deterministic=True).ravel()
-        if discourse_predictions:
-            test_predictions = [test_predictions, l_lstm_rr_s.class_counts]
         
         self.predict = theano.function(inputs,
                                        test_predictions,
@@ -221,7 +216,7 @@ class PersuasiveInfluenceRNN:
             
         #attention for sentences, B x S
         sentence_attention = lasagne.layers.get_output(l_attn_rr_s)
-        if post_features_length or add_biases:
+        if add_biases:
             inputs = inputs[:-1]
         self.sentence_attention = theano.function(inputs,
                                                   sentence_attention,
