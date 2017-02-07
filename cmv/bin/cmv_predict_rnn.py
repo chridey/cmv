@@ -66,6 +66,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='train an argument RNN')
 
     parser.add_argument('inputfile')
+    parser.add_argument('outputfile')    
 
     parser.add_argument('--num_epochs', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=100)

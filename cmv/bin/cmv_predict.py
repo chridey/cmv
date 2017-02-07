@@ -79,6 +79,8 @@ if __name__ == '__main__':
             elif args.auc:
                 lr_scores = lr.decision_function(X_val)
                 score = roc_auc_score(labels_val, lr_scores)
+            else:
+                score = accuracy_score(labels, predictions)
                 
             if score > best:
                 best = score
