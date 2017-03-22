@@ -95,7 +95,7 @@ def make_indices_mask_2d(posts, max_len, indices, add, embeddings):
             words[i,j] = indices[word]
             mask[i,j] = 1
             
-    return word, mask, indices, embeddings_array
+    return words, mask, indices, embeddings_array
 
 def make_indices_mask_3d(posts, max_len, max_sentence_len, indices, add, embeddings):
     embeddings_array = [np.random.uniform(-.2, .2, embeddings.layer1_size)]
@@ -118,7 +118,7 @@ def make_indices_mask_3d(posts, max_len, max_sentence_len, indices, add, embeddi
                 words[i,j,k] = indices[word]
                 mask[i,j,k] = 1
                 
-    return word, mask, indices, embeddings_array
+    return words, mask, indices, embeddings_array
 
 def generate_negative_samples(batch_size, negs, max_len, words, mask):
     inds = np.random.randint(0, words.shape[0], (batch_size, negs))

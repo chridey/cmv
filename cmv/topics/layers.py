@@ -66,7 +66,6 @@ class ReconLayer(lasagne.layers.Layer):
         self.R = self.add_param(lasagne.init.GlorotUniform(), 
             (num_descs, d), name='R')
         self.d = d
-        self.params = [self.R]
         
     def get_output_for(self, hiddens, **kwargs):
         return T.dot(hiddens, self.R)
