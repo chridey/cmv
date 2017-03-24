@@ -47,14 +47,12 @@ def build_rmn(d_word, len_voc,
         input_var=in_negmasks)
 
     #embeddings are now B x L x D
-    #l_emb = MyEmbeddingLayer(l_inwords, len_voc,
-    l_emb = lasagne.layers.EmbeddingLayer(l_inwords, len_voc, 
-        d_word, W=lasagne.utils.floatX(We))#, name='word_emb')
+    l_emb = MyEmbeddingLayer(l_inwords, len_voc, 
+        d_word, W=lasagne.utils.floatX(We), name='word_emb')
     # negative examples should use same embedding matrix
     # B x N x L x D
-    l_negemb = lasagne.layers.EmbeddingLayer(l_inneg, len_voc, 
-    #l_negemb = MyEmbeddingLayer(l_inneg, len_voc, 
-            d_word, W=l_emb.W)#, name='word_emb_copy1')
+    l_negemb = MyEmbeddingLayer(l_inneg, len_voc, 
+            d_word, W= l_emb.W, name='word_emb_copy1')
 
     # freeze embeddings
     if freeze_words:
@@ -397,13 +395,22 @@ if __name__ == '__main__':
             #print(ex_cost, ex_topic, ex_ortho)
             
         end_time = time.time()
+        
         print(cost)
         
         #print predictions on validation set
         print(gold_val.shape)
-        scores = predict(words_val[op_idxs_val], mask_val[op_idxs_val],
-                              words_rr_val, mask_rr_val, mask_rr_s_val)
-        scores = np.nan_to_num(scores)
+        scores = []
+        batch_size = gold_val.shape[0] // 10
+        for i in range(gold_val.shape[0] // batch_size + 1):
+            idxs_batch = np.arange(i*batch_size:(i+1)*batch_size)
+            words_val_batch, mask_val_batch, _, words_rr_val_batch, mask_rr_val_batch, mask_rr_s_val_batch, _, _ = get_next_batch(idxs_batch, words_val[op_idxs_val], mask_val[op_idxs_val], words_rr_val, mask_rr_val, gold_val)
+            scores += predict(words_val_batch, mask_val_batch,
+                              words_rr_val_batch, mask_rr_val_batch, mask_rr_s_val_batch).tolist()
+            
+            #scores += predict(words_val[op_idxs_val], mask_val[op_idxs_val],
+            #                 words_rr_val, mask_rr_val, mask_rr_s_val).tolist()
+        scores = np.nan_to_num(np.array(scores))
         predictions = scores > .5
         print(predictions.shape)
         print('ROC AUC', roc_auc_score(gold_val, scores))
