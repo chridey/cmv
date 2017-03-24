@@ -223,7 +223,8 @@ def get_next_batch(idxs_batch, words, mask, words_rr, mask_rr, gold):
         class_weights = {i:1/(label_counts[i]/max_count) for i in label_counts}
         print(label_counts, class_weights)
         weights = np.array([class_weights[i] for i in gold_batch]).astype(np.float32)
-    return words_batch, mask_batch, drop_mask, ns, nm, words_rr_batch, drop_mask_rr, mask_rr_s_batch, gold_batch, weights
+
+        return words_batch, mask_batch, drop_mask, ns, nm, words_rr_batch, drop_mask_rr, mask_rr_s_batch, gold_batch, weights
 
 if __name__ == '__main__':
     
