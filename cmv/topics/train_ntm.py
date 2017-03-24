@@ -252,13 +252,20 @@ if __name__ == '__main__':
                                                                           counts=counts_rr,
                                                                           hierarchical=True,
                                                                           keys=['val_pos', 'val_neg'])
+        
+        op_idxs = np.array(metadata['train_pos_indices'] + metadata['train_neg_indices'])
+        gold = np.array([1]*len(metadata['train_pos']) + [0]*len(metadata['train_neg']))
+        op_idxs_val = np.array(metadata['val_pos_indices'] + metadata['val_neg_indices'])
+        gold_val = np.array([1]*len(metadata['val_pos']) + [0]*len(metadata['val_neg']))
+        
         if args.save:
             with open(args.save + '_indices.json', 'w') as f:
                 json.dump([indices, indices_rr], f)
             np.savez(args.save, words=words, mask=mask, words_val=words_val,
                      mask_val=mask_val, words_rr=words_rr, mask_rr=mask_rr,
                      words_rr_val=words_rr_val, mask_rr_val=mask_rr_val,
-                     We=We, We_rr=We_rr)
+                     We=We, We_rr=We_rr,
+                     gold=gold, gold_val=gold_val, op_idxs=op_idxs, op_idxs_val=op_idxs_val)
     else:
         with open(args.load + '_indices.json') as f:
             indices, indices_rr = json.load(f)
@@ -274,6 +281,10 @@ if __name__ == '__main__':
         mask_rr_val = data['mask_rr_val']
         We = data['We']
         We_rr = data['We_rr']
+        gold = data['gold']
+        gold_val = data['gold_val']
+        op_idxs = data['op_idxs']
+        op_idxs_val = data['op_idxs_val']
                   
     mask_rr_s_val = (mask_rr_val.sum(axis=-1) > 0).astype('float32')
     
@@ -300,10 +311,6 @@ if __name__ == '__main__':
     print 'done compiling, now training...'
     
     descriptor_log = 'descriptor_log'
-    op_idxs = np.array(metadata['train_pos_indices'] + metadata['train_neg_indices'])
-    gold = np.array([1]*len(metadata['train_pos']) + [0]*len(metadata['train_neg']))
-    op_idxs_val = np.array(metadata['val_pos_indices'] + metadata['val_neg_indices'])
-    gold_val = np.array([1]*len(metadata['val_pos']) + [0]*len(metadata['val_neg']))
 
     print(np.setdiff1d(np.arange(mask.shape[0]),
                        np.nonzero(mask.sum(axis=-1))))
