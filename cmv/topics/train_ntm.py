@@ -48,7 +48,7 @@ def build_rmn(d_word, len_voc,
 
     #embeddings are now B x L x D
     l_emb = MyEmbeddingLayer(l_inwords, len_voc, 
-        d_word, W=We, name='word_emb')
+        d_word, W=lasagne.utils.floatX(We), name='word_emb')
     # negative examples should use same embedding matrix
     # B x N x L x D
     l_negemb = MyEmbeddingLayer(l_inneg, len_voc, 

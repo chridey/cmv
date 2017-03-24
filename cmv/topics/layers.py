@@ -1,4 +1,4 @@
-import theano, cPickle, h5py, lasagne, random, csv, gzip                                                  
+import theano, cPickle, lasagne, random, csv, gzip                                                  
 import numpy as np
 import theano.tensor as T         
 
