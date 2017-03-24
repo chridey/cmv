@@ -375,6 +375,8 @@ if __name__ == '__main__':
     num_batches = words_rr.shape[0] // args.batch_size + 1
     for epoch in range(args.num_epochs):
         cost = 0.
+        cost_topic = 0.
+        cost_inf = 0.
         idxs = np.random.choice(words_rr.shape[0], words_rr.shape[0], False)
         
         start_time = time.time()
@@ -418,7 +420,9 @@ if __name__ == '__main__':
             #ex_cost, ex_topic, ex_ortho = train_ntm(words_batch, mask_batch, drop_mask, ns, nm)
             
             cost += ex_cost
-            
+            cost_topic += ex_topic
+            cost_inf += np.average(ex_inf, weights=weights)
+            print(ex_cost, ex_topic, ex_ortho, np.average(ex_inf, weights=weights))
             #print(ex_cost, ex_topic, ex_ortho)
             if batch_num * args.batch_size % 1000 == 0:
                 print(label_counts, class_weights)
@@ -426,7 +430,7 @@ if __name__ == '__main__':
                 print(time.time()-start_time)
             
         end_time = time.time()
-        print(cost, end_time-start_time)
+        print(end_time-start_time, cost, cost_topic, cost_inf)
         
         #print predictions on validation set
         print(gold_val.shape)
