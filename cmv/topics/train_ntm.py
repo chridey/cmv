@@ -47,12 +47,14 @@ def build_rmn(d_word, len_voc,
         input_var=in_negmasks)
 
     #embeddings are now B x L x D
-    l_emb = MyEmbeddingLayer(l_inwords, len_voc, 
-        d_word, W=lasagne.utils.floatX(We), name='word_emb')
+    #l_emb = MyEmbeddingLayer(l_inwords, len_voc,
+    l_emb = lasagne.layers.EmbeddingLayer(l_inwords, len_voc, 
+        d_word, W=lasagne.utils.floatX(We))#, name='word_emb')
     # negative examples should use same embedding matrix
     # B x N x L x D
-    l_negemb = MyEmbeddingLayer(l_inneg, len_voc, 
-            d_word, W=lasagne.utils.floatX(We),name='word_emb_copy1')  #l_emb.W, name='word_emb_copy1')
+    l_negemb = lasagne.layers.EmbeddingLayer(l_inneg, len_voc, 
+    #l_negemb = MyEmbeddingLayer(l_inneg, len_voc, 
+            d_word, W=l_emb.W)#, name='word_emb_copy1')
 
     # freeze embeddings
     if freeze_words:
