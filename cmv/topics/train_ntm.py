@@ -212,41 +212,66 @@ if __name__ == '__main__':
 
     parser.add_argument('--num_epochs', type=int, default=15)
     parser.add_argument('--batch_size', type=int, default=100)
-    
+
+    parser.add_argument('--load')
+    parser.add_argument('--save')
+        
     args = parser.parse_args()
 
     print('loading data...')
-    with open(args.metadata_file) as f:
-        metadata = json.load(f)
+    if not args.load:
+        with open(args.metadata_file) as f:
+            metadata = json.load(f)
 
-    embeddings = gensim.models.Doc2Vec.load_word2vec_format(args.embeddings_file, binary=False)
-    
-    words, mask, indices, counts, We = utils.load_data(metadata, embeddings,
-                                               args.min_count, args.max_count,
-                                               args.min_rank, args.max_rank,
-                                               add=True)
-    words_val, mask_val, _, _, _ = utils.load_data(metadata, embeddings,
-                                               args.min_count, args.max_count,
-                                               args.min_rank, args.max_rank,
-                                               indices=indices,
-                                               add=False,
-                                               counts=counts,
-                                               keys=['val_op'])
-    
-    words_rr, mask_rr, indices_rr, counts_rr, We_rr = utils.load_data(metadata, embeddings,
-                                                                      args.min_count, args.max_count,
-                                                                      args.min_rank, args.max_rank,
-                                                                      add=True,
-                                                                      hierarchical=True,
-                                                                      keys=['train_pos', 'train_neg'])
-    words_rr_val, mask_rr_val, _, _, _ = utils.load_data(metadata, embeddings,
-                                                                      args.min_count, args.max_count,
-                                                                      args.min_rank, args.max_rank,
-                                                                      indices=indices_rr,
-                                                                      add=False,
-                                                                      counts=counts_rr,
-                                                                      hierarchical=True,
-                                                                      keys=['val_pos', 'val_neg'])
+        embeddings = gensim.models.Doc2Vec.load_word2vec_format(args.embeddings_file, binary=False)
+
+        
+        words, mask, indices, counts, We = utils.load_data(metadata, embeddings,
+                                                   args.min_count, args.max_count,
+                                                   args.min_rank, args.max_rank,
+                                                   add=True)
+        words_val, mask_val, _, _, _ = utils.load_data(metadata, embeddings,
+                                                   args.min_count, args.max_count,
+                                                   args.min_rank, args.max_rank,
+                                                   indices=indices,
+                                                   add=False,
+                                                   counts=counts,
+                                                   keys=['val_op'])
+
+        words_rr, mask_rr, indices_rr, counts_rr, We_rr = utils.load_data(metadata, embeddings,
+                                                                          args.min_count, args.max_count,
+                                                                          args.min_rank, args.max_rank,
+                                                                          add=True,
+                                                                          hierarchical=True,
+                                                                          keys=['train_pos', 'train_neg'])
+        words_rr_val, mask_rr_val, _, _, _ = utils.load_data(metadata, embeddings,
+                                                                          args.min_count, args.max_count,
+                                                                          args.min_rank, args.max_rank,
+                                                                          indices=indices_rr,
+                                                                          add=False,
+                                                                          counts=counts_rr,
+                                                                          hierarchical=True,
+                                                                          keys=['val_pos', 'val_neg'])
+        if args.save:
+            with open(args.save + '_indices.json', 'w') as f:
+                json.dump([indices, indices_rr], f)
+            np.savez(args.save, words=words, mask=mask, words_val=words_val,
+                     mask_val=mask_val, words_rr=words_rr, mask_rr=mask_rr,
+                     words_rr_val=words_rr_val, mask_rr_val=mask_rr_val)
+    else:
+        with open(args.load + '_indices.json') as f:
+            indices, indices_rr = json.load(f)
+
+        data = np.load(args.load)
+        words = data['words']
+        mask = data['mask']
+        words_val = data['words_val']
+        mask_val = data['mask_val']
+        words_rr = data['words_rr']
+        mask_rr = data['mask_rr']
+        words_rr_val = data['words_rr_val']
+        mask_rr_val = data['mask_rr_val']
+                  
     mask_rr_s_val = (mask_rr_val.sum(axis=-1) > 0).astype('float32')
     
     norm_We = We / np.linalg.norm(We, axis=1)[:, None]
