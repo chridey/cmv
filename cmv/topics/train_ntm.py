@@ -215,13 +215,13 @@ def get_next_batch(idxs_batch, words, mask, words_rr, mask_rr, gold):
         drop_mask *= mask_batch
         drop_mask_rr = (np.random.rand(*(mask_rr_batch.shape)) < (1 - p_drop)).astype('float32')
         drop_mask_rr *= mask_rr_batch
-        print(np.nonzero(drop_mask.sum(axis=-1))[0].shape)
+        #print(np.nonzero(drop_mask.sum(axis=-1))[0].shape)
 
         #calculate weights
         label_counts = collections.Counter(gold_batch)
         max_count = 1.*max(label_counts.values())
         class_weights = {i:1/(label_counts[i]/max_count) for i in label_counts}
-        print(label_counts, class_weights)
+        #print(label_counts, class_weights)
         weights = np.array([class_weights[i] for i in gold_batch]).astype(np.float32)
 
         return words_batch, mask_batch, drop_mask, ns, nm, words_rr_batch, drop_mask_rr, mask_rr_s_batch, gold_batch, weights
@@ -382,7 +382,34 @@ if __name__ == '__main__':
             print(batch_num)
             idxs_batch = idxs[batch_num*args.batch_size:(batch_num+1)*args.batch_size]
                         
-            words_batch, mask_batch, drop_mask, ns, nm, words_rr_batch, drop_mask_rr, mask_rr_s_batch, gold_batch, weights = get_next_batch(idxs_batch, words, mask, words_rr, mask_rr, gold)
+            #op_idxs_batch = op_idxs[idxs_batch]
+            words_batch = words[idxs_batch] #words[op_idxs_batch]
+            mask_batch = mask[idxs_batch] #mask[op_idxs_batch]
+            words_rr_batch = words_rr[idxs_batch]
+            mask_rr_batch = mask_rr[idxs_batch]
+            #make the sentence mask
+            mask_rr_s_batch = (mask_rr_batch.sum(axis=-1) > 0).astype('float32')
+            gold_batch = gold[idxs_batch]
+
+            ns, nm = utils.generate_negative_samples(words_batch.shape[0], args.num_negs,
+                                               words.shape[1], words, mask)
+
+            # word dropout
+            # TODO: what if we drop words and there are no words left in a sentence
+            drop_mask = (np.random.rand(*(mask_batch.shape)) < (1 - p_drop)).astype('float32')
+            drop_mask *= mask_batch
+            drop_mask_rr = (np.random.rand(*(mask_rr_batch.shape)) < (1 - p_drop)).astype('float32')
+            drop_mask_rr *= mask_rr_batch
+            #print(np.nonzero(drop_mask.sum(axis=-1))[0].shape)
+
+            #calculate weights
+            label_counts = collections.Counter(gold_batch)
+            max_count = 1.*max(label_counts.values())
+            class_weights = {i:1/(label_counts[i]/max_count) for i in label_counts}
+            
+            weights = np.array([class_weights[i] for i in gold_batch]).astype(np.float32)
+
+            #words_batch, mask_batch, drop_mask, ns, nm, words_rr_batch, drop_mask_rr, mask_rr_s_batch, gold_batch, weights = get_next_batch(idxs_batch, words, mask, words_rr, mask_rr, gold)
             #topics = get_topics(words_batch, drop_mask)
             #print(topics)
             ex_cost, ex_topic, ex_ortho, ex_inf = train(words_batch, mask_batch, drop_mask, ns, nm,
@@ -391,20 +418,23 @@ if __name__ == '__main__':
             #ex_cost, ex_topic, ex_ortho = train_ntm(words_batch, mask_batch, drop_mask, ns, nm)
             
             cost += ex_cost
-            print(ex_cost, ex_topic, ex_ortho, ex_inf.sum())
+            
             #print(ex_cost, ex_topic, ex_ortho)
+            if batch_num * args.batch_size % 1000 == 0:
+                print(label_counts, class_weights)
+                print(ex_cost, ex_topic, ex_ortho, ex_inf.sum())
+                print(time.time()-start_time)
             
         end_time = time.time()
-        
-        print(cost)
+        print(cost, end_time-start_time)
         
         #print predictions on validation set
         print(gold_val.shape)
         scores = []
         batch_size = gold_val.shape[0] // 10
         for i in range(gold_val.shape[0] // batch_size + 1):
-            idxs_batch = np.arange(i*batch_size:(i+1)*batch_size)
-            words_val_batch, mask_val_batch, _, words_rr_val_batch, mask_rr_val_batch, mask_rr_s_val_batch, _, _ = get_next_batch(idxs_batch, words_val[op_idxs_val], mask_val[op_idxs_val], words_rr_val, mask_rr_val, gold_val)
+            idxs_batch = np.arange(i*batch_size,min((i+1)*batch_size, gold_val.shape[0]))
+            words_val_batch, mask_val_batch, _, _, _, words_rr_val_batch, mask_rr_val_batch, mask_rr_s_val_batch, _, _ = get_next_batch(idxs_batch, words_val[op_idxs_val], mask_val[op_idxs_val], words_rr_val, mask_rr_val, gold_val)
             scores += predict(words_val_batch, mask_val_batch,
                               words_rr_val_batch, mask_rr_val_batch, mask_rr_s_val_batch).tolist()
             
@@ -439,9 +469,9 @@ if __name__ == '__main__':
                 print desc_list
             log.flush()
             log.close()
-            rels = get_topics(words, mask)
-            print(rels.sum(axis=0))
-            print(collections.Counter(rels.argmax(axis=1)))
+            #rels = get_topics(words, mask)
+            #print(rels.sum(axis=0))
+            #print(collections.Counter(rels.argmax(axis=1)))
 
             '''
             #save influence classifier parameters
