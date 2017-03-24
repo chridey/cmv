@@ -262,7 +262,7 @@ if __name__ == '__main__':
         with open(args.load + '_indices.json') as f:
             indices, indices_rr = json.load(f)
 
-        data = np.load(args.load)
+        data = np.load(args.load + '.npz')
         words = data['words']
         mask = data['mask']
         words_val = data['words_val']
