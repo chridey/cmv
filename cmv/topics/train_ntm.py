@@ -257,7 +257,8 @@ if __name__ == '__main__':
                 json.dump([indices, indices_rr], f)
             np.savez(args.save, words=words, mask=mask, words_val=words_val,
                      mask_val=mask_val, words_rr=words_rr, mask_rr=mask_rr,
-                     words_rr_val=words_rr_val, mask_rr_val=mask_rr_val)
+                     words_rr_val=words_rr_val, mask_rr_val=mask_rr_val,
+                     We=We, We_rr=We_rr)
     else:
         with open(args.load + '_indices.json') as f:
             indices, indices_rr = json.load(f)
@@ -271,6 +272,8 @@ if __name__ == '__main__':
         mask_rr = data['mask_rr']
         words_rr_val = data['words_rr_val']
         mask_rr_val = data['mask_rr_val']
+        We = data['We']
+        We_rr = data['We_rr']
                   
     mask_rr_s_val = (mask_rr_val.sum(axis=-1) > 0).astype('float32')
     
