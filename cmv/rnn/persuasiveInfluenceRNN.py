@@ -79,7 +79,6 @@ class PersuasiveInfluenceRNN:
         l_attn_rr_w = AttentionWordLayer([l_emb_rr_w, l_mask_rr_w], d)
         l_avg_rr_s_words = WeightedAverageWordLayer([l_emb_rr_w, l_attn_rr_w])
         concats = [l_avg_rr_s_words]
-
             
         if d_frames:
             assert(V_frames > 0)

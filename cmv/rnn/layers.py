@@ -90,6 +90,57 @@ class AttentionWordLayer(lasagne.layers.MergeLayer):
         #return (None,input_shapes[0][1],input_shapes[0][-1])
         return (None,input_shapes[0][1],input_shapes[0][2])
 
+class TopicAttentionWordLayer(lasagne.layers.MergeLayer):
+    #uses a fixed "query" for each topic, requires a K-long probability vector of topics for each datapoint
+    #this returns weights that can be used in the averaging layer in place of the mask
+    def __init__(self, incomings, d, W_w=lasagne.init.Normal(),
+                 u_w=lasagne.init.Normal(), b_w=lasagne.init.Normal(),
+                 normalized=True, **kwargs):
+        super(TopicAttentionWordLayer, self).__init__(incomings, **kwargs)
+        self.W_w = self.add_param(W_w, (incomings[0].output_shape[-1],d))
+        self.b_w = self.add_param(b_w, (d,))
+        self.normalized = normalized
+
+        self.u_w = self.add_param(u_w, (incomings[-1].output_shape[-1], d))
+        
+    def get_output_for(self, inputs, **kwargs):
+        #inputs[0] is the B x S x W x D data
+        #inputs[1] is the B x S x W x D mask
+        #inputs[2] is the B x K topic probability
+        #u_w is a K x D basis matrix
+        
+        h = T.tanh(T.dot(inputs[0], self.W_w) + self.b_w)
+
+        #now a B x D matrix
+        u_w = T.dot(inputs[2], self.u_w)
+
+        #multiply the post/document-specific attention vector by each word in the document
+        #now B x S x W
+        u = T.sum(h * u_w[:, None, None, :], axis=-1)
+            
+        # set masked positions to large negative value
+        u = u*inputs[1] - (1-inputs[1])*10000
+        
+        #now batch_size x post_length x sentence_length x 1 but need to normalize via softmax
+        #over 2nd axis, and also multiply by the sentence mask
+
+        # normalize over sentence_length (->large negative values = 0)
+        if not self.normalized:
+            return T.reshape(u, (inputs[0].shape[0], inputs[0].shape[1], inputs[0].shape[2]))
+        u = T.reshape(u, (inputs[0].shape[0]*inputs[0].shape[1], inputs[0].shape[2]))
+        alpha = T.nnet.softmax(u)
+        alpha = T.reshape(alpha, (inputs[0].shape[0], inputs[0].shape[1], inputs[0].shape[2]))
+
+        #now return the weighted sum
+        #return T.sum(inputs[0] * alpha[:,:,:, None], axis=2)
+
+        return alpha
+        
+    def get_output_shape_for(self, input_shapes):
+        
+        #return (None,input_shapes[0][1],input_shapes[0][-1])
+        return (None,input_shapes[0][1],input_shapes[0][2])
+
 class AttentionSentenceLayer(lasagne.layers.MergeLayer):
     #uses either a fixed "query" for the important words or another layer
     #this returns weights that can be used in the averaging layer in place of the mask
@@ -98,7 +149,7 @@ class AttentionSentenceLayer(lasagne.layers.MergeLayer):
                  custom_query=None, **kwargs):
         super(AttentionSentenceLayer, self).__init__(incomings, **kwargs)
         self.W_s = self.add_param(W_s, (incomings[0].output_shape[-1], d))
-        self.b_s = self.add_param(b_s, (1,))
+        self.b_s = self.add_param(b_s, (d,))
         
         self.fixed_query = True
         if custom_query is not None:
@@ -110,7 +161,7 @@ class AttentionSentenceLayer(lasagne.layers.MergeLayer):
     def get_output_for(self, inputs, **kwargs):
         #u = T.sum(inputs[0], axis=-1)
         if self.fixed_query:
-            u = T.dot(T.tanh(T.dot(inputs[0], self.W_s)), self.u_s)            
+            u = T.dot(T.tanh(T.dot(inputs[0], self.W_s) + self.b_s), self.u_s)            
         else:
             u = T.batched_dot(T.tanh(T.dot(inputs[0], self.W_s)), self.u_s)
         
