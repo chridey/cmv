@@ -14,7 +14,7 @@ from sklearn.metrics import roc_auc_score, precision_recall_fscore_support, accu
 
 from cmv.topics import utils
 from cmv.topics.layers import MyEmbeddingLayer, AverageLayer, AverageNegativeLayer, ReconLayer
-from cmv.rnn.layers import TopicAttentionWordLayer, WeightedAverageWordLayer, AttentionSentenceLayer, WeightedAverageSentenceLayer
+from cmv.rnn.layers import AttentionWordLayer, TopicAttentionWordLayer, WeightedAverageWordLayer, AttentionSentenceLayer, WeightedAverageSentenceLayer
 
 
 
@@ -25,7 +25,7 @@ def build_rmn(d_word, len_voc,
     len_voc_rr, We_rr, rd=50,
     freeze_words=True, eps=1e-5, lr=0.01, negs=10,
     num_layers=2, add_biases=False,
-    GRAD_CLIP=100):
+    GRAD_CLIP=100, topic=False, lambda_t=1.0):
 
     # input theano vars
     in_words = T.imatrix(name='words')
@@ -92,8 +92,12 @@ def build_rmn(d_word, len_voc,
     #now B x N
     negs = T.sum(recon[:, None, :] * negsums, axis=-1) 
 
-    tloss = T.sum(T.maximum(0., 1. - correct[:, None] + negs))
-    #TODO: add normalized sum, so that loss is of same magnitude
+    #tloss = T.sum(T.maximum(0., 1. - correct[:, None] + negs))
+    #add normalized sum, so that loss is of same magnitude
+    #tloss = T.mean(T.maximum(0., 1. - correct[:, None] + negs))
+    topic_weights = T.vector('weights')
+    tloss = T.sum(T.maximum(0., 1. - correct[:, None] + negs), axis=-1)
+    tloss = lambda_t * lasagne.objectives.aggregate(tloss, topic_weights, mode='normalized_sum')
     
     # enforce orthogonality constraint
     norm_R = l_recon.R / l_recon.R.norm(2, axis=1)[:, None]
@@ -111,7 +115,7 @@ def build_rmn(d_word, len_voc,
     #B-long vector
     gold = T.ivector('gold')
     biases = T.matrix('biases')
-    weights = T.ivector('weights')
+    weights = T.vector('weights')
 
     #scalar parameters
     lambda_w = T.scalar('lambda_w')
@@ -132,7 +136,12 @@ def build_rmn(d_word, len_voc,
                                                W=lasagne.utils.floatX(We_rr))
     #CBOW w/attn
     #now B x S x D
-    l_attn_rr_w = TopicAttentionWordLayer([l_emb_rr_w, l_mask_rr_w, l_rels], d_word)
+
+    if topic:
+        l_attn_rr_w = TopicAttentionWordLayer([l_emb_rr_w, l_mask_rr_w, l_rels], d_word)
+    else:
+        l_attn_rr_w = AttentionWordLayer([l_emb_rr_w, l_mask_rr_w], d_word)
+        
     l_avg_rr_s = WeightedAverageWordLayer([l_emb_rr_w, l_attn_rr_w])
     l_lstm_rr_s = lasagne.layers.LSTMLayer(l_avg_rr_s, rd,
                                            nonlinearity=lasagne.nonlinearities.tanh,
@@ -160,10 +169,13 @@ def build_rmn(d_word, len_voc,
 
     predictions = lasagne.layers.get_output(network).ravel()
 
-    predictions = theano.tensor.log(predictions / (1 - predictions))
-    hloss = lasagne.objectives.binary_hinge_loss(predictions, gold) #, log_odds=False)
-    loss = ntm_loss + lasagne.objectives.aggregate(hloss, weights, mode='normalized_sum')
-
+    #predictions = theano.tensor.log(predictions / (1 - predictions))
+    #hloss = lasagne.objectives.binary_hinge_loss(predictions, gold) #, log_odds=False)
+    hloss = lasagne.objectives.binary_crossentropy(predictions, gold)
+    loss = lasagne.objectives.aggregate(hloss, weights, mode='normalized_sum')
+    if topic:
+        loss += ntm_loss
+        
     all_params = lasagne.layers.get_all_params(l_recon, trainable=True)
     
     updates = lasagne.updates.adam(ntm_loss, all_params, learning_rate=lr)
@@ -175,24 +187,38 @@ def build_rmn(d_word, len_voc,
                               lasagne.layers.get_output(l_rels),
                               allow_input_downcast=True)
     print('train_ntm...')
-    train_ntm_fn = theano.function([in_words, in_currmasks, in_dropmasks, in_neg, in_negmasks],
+    train_ntm_fn = theano.function([in_words, in_currmasks, in_dropmasks, in_neg, in_negmasks, topic_weights],
                                 [ntm_loss, tloss, ortho_penalty],
                                 updates=updates,
                                 allow_input_downcast=True)
     print('train...')
-    all_params += lasagne.layers.get_all_params(network, trainable=True)
-    updates = lasagne.updates.adam(loss, all_params, learning_rate=lr)    
-    train_fn = theano.function([in_words, in_currmasks, in_dropmasks,
-                                in_neg, in_negmasks, idxs_rr, mask_rr_w, mask_rr_s,
-                                gold, weights, p_dropout],
-                                [loss, tloss, ortho_penalty, hloss],
-                                updates=updates,
-                                allow_input_downcast=True)
-    
+    if topic:
+        all_params += lasagne.layers.get_all_params(network, trainable=True)
+    else:
+        all_params = lasagne.layers.get_all_params(network, trainable=True)
+    updates = lasagne.updates.adam(loss, all_params, learning_rate=lr)
+    if topic:
+        train_fn = theano.function([in_words, in_currmasks, in_dropmasks,
+                                    in_neg, in_negmasks, idxs_rr, mask_rr_w, mask_rr_s,
+                                    gold, weights, topic_weights, p_dropout],
+                                    [loss, tloss, ortho_penalty, hloss],
+                                    updates=updates,
+                                    allow_input_downcast=True)
+    else:
+        train_fn = theano.function([idxs_rr, mask_rr_w, mask_rr_s,
+                                    gold, weights, p_dropout],
+                                    [loss, hloss],
+                                    updates=updates,
+                                    allow_input_downcast=True)
     print('predict...')
-    predict_fn = theano.function([in_words, in_dropmasks, idxs_rr, mask_rr_w, mask_rr_s],
-                                 test_predictions,
-                                 allow_input_downcast=True)
+    if topic:
+        predict_fn = theano.function([in_words, in_dropmasks, idxs_rr, mask_rr_w, mask_rr_s],
+                                    test_predictions,
+                                    allow_input_downcast=True)
+    else:
+        predict_fn = theano.function([idxs_rr, mask_rr_w, mask_rr_s],
+                                    test_predictions,
+                                    allow_input_downcast=True)
 
     return train_fn, train_ntm_fn, rels_fn, predict_fn, l_recon, network
 
@@ -243,6 +269,8 @@ if __name__ == '__main__':
     parser.add_argument('--num_epochs', type=int, default=15)
     parser.add_argument('--batch_size', type=int, default=100)
 
+    parser.add_argument('--topic', action='store_true')
+    parser.add_argument('--lambda_t', type=float, default=1.0)
     parser.add_argument('--load')
     parser.add_argument('--save')
         
@@ -337,7 +365,8 @@ if __name__ == '__main__':
                                                words_rr.shape[1], words_rr.shape[2],
                                                We_rr.shape[0], We_rr,
                                                freeze_words=True,
-                                               eps=eps, lr=lr, negs=args.num_negs)
+                                               eps=eps, lr=lr, negs=args.num_negs, topic=args.topic,
+                                               lambda_t=args.lambda_t)
     print 'done compiling, now training...'
     
     descriptor_log = 'descriptor_log'
@@ -414,23 +443,28 @@ if __name__ == '__main__':
             #words_batch, mask_batch, drop_mask, ns, nm, words_rr_batch, drop_mask_rr, mask_rr_s_batch, gold_batch, weights = get_next_batch(idxs_batch, words, mask, words_rr, mask_rr, gold)
             #topics = get_topics(words_batch, drop_mask)
             #print(topics)
-            ex_cost, ex_topic, ex_ortho, ex_inf = train(words_batch, mask_batch, drop_mask, ns, nm,
-                                                        words_rr_batch, drop_mask_rr, mask_rr_s_batch,
-                                                        gold_batch, weights, p_dropout) #topic_weights
+            if args.topic:
+                ex_cost, ex_topic, ex_ortho, ex_inf = train(words_batch, mask_batch, drop_mask, ns, nm,
+                                                            words_rr_batch, drop_mask_rr, mask_rr_s_batch,
+                                                            gold_batch, weights, weights / args.num_negs,
+                                                            p_dropout) #topic_weights
+                cost_topic += ex_topic                
+            else:
+                ex_cost, ex_inf = train(words_rr_batch, drop_mask_rr, mask_rr_s_batch, gold_batch, weights, p_dropout)
+                cost_inf += np.average(ex_inf, weights=weights)
             #ex_cost, ex_topic, ex_ortho = train_ntm(words_batch, mask_batch, drop_mask, ns, nm)
             
             cost += ex_cost
-            cost_topic += ex_topic
-            cost_inf += np.average(ex_inf, weights=weights)
-            print(ex_cost, ex_topic, ex_ortho, np.average(ex_inf, weights=weights))
+            
             #print(ex_cost, ex_topic, ex_ortho)
             if batch_num * args.batch_size % 1000 == 0:
                 print(label_counts, class_weights)
-                print(ex_cost, ex_topic, ex_ortho, ex_inf.sum())
+                print(ex_cost, ex_topic if args.topic else None,
+                      ex_ortho if args.topic else None, np.average(ex_inf, weights=weights))
                 print(time.time()-start_time)
             
         end_time = time.time()
-        print(end_time-start_time, cost, cost_topic, cost_inf)
+        print(end_time-start_time, cost, cost_topic if args.topic else None, cost_inf)
         
         #print predictions on validation set
         print(gold_val.shape)
@@ -439,9 +473,11 @@ if __name__ == '__main__':
         for i in range(gold_val.shape[0] // batch_size + 1):
             idxs_batch = np.arange(i*batch_size,min((i+1)*batch_size, gold_val.shape[0]))
             words_val_batch, mask_val_batch, _, _, _, words_rr_val_batch, mask_rr_val_batch, mask_rr_s_val_batch, _, _ = get_next_batch(idxs_batch, words_val[op_idxs_val], mask_val[op_idxs_val], words_rr_val, mask_rr_val, gold_val)
-            scores += predict(words_val_batch, mask_val_batch,
-                              words_rr_val_batch, mask_rr_val_batch, mask_rr_s_val_batch).tolist()
-            
+            if args.topic:
+                scores += predict(words_val_batch, mask_val_batch,
+                                words_rr_val_batch, mask_rr_val_batch, mask_rr_s_val_batch).tolist()
+            else:
+                scores += predict(words_rr_val_batch, mask_rr_val_batch, mask_rr_s_val_batch).tolist()
             #scores += predict(words_val[op_idxs_val], mask_val[op_idxs_val],
             #                 words_rr_val, mask_rr_val, mask_rr_s_val).tolist()
         scores = np.nan_to_num(np.array(scores))
@@ -453,26 +489,27 @@ if __name__ == '__main__':
             
         # save params if cost went down
         if cost < min_cost:
-            min_cost = cost
-            params = lasagne.layers.get_all_params(ntm_layer)
-            p_values = [p.get_value() for p in params]
-            p_dict = dict(zip([str(p) for p in params], p_values))
-            cPickle.dump(p_dict, open('ntm_params.pkl', 'wb'),
-                protocol=cPickle.HIGHEST_PROTOCOL)
+            if args.topic:
+                min_cost = cost
+                params = lasagne.layers.get_all_params(ntm_layer)
+                p_values = [p.get_value() for p in params]
+                p_dict = dict(zip([str(p) for p in params], p_values))
+                cPickle.dump(p_dict, open('ntm_params.pkl', 'wb'),
+                    protocol=cPickle.HIGHEST_PROTOCOL)
 
-            # compute nearest neighbors of descriptors
-            R = p_dict['R']
-            log = open(descriptor_log, 'w')
-            for ind in range(len(R)):
-                desc = R[ind] / np.linalg.norm(R[ind])
-                sims = We.dot(desc.T)
-                ordered_words = np.argsort(sims)[::-1]
-                desc_list = [ rev_indices[w].encode('utf-8') for w in ordered_words[:10]]
-                log.write(' '.join(desc_list) + '\n')
-                print 'descriptor %d:' % ind
-                print desc_list
-            log.flush()
-            log.close()
+                # compute nearest neighbors of descriptors
+                R = p_dict['R']
+                log = open(descriptor_log, 'w')
+                for ind in range(len(R)):
+                    desc = R[ind] / np.linalg.norm(R[ind])
+                    sims = We.dot(desc.T)
+                    ordered_words = np.argsort(sims)[::-1]
+                    desc_list = [ rev_indices[w].encode('utf-8') for w in ordered_words[:10]]
+                    log.write(' '.join(desc_list) + '\n')
+                    print 'descriptor %d:' % ind
+                    print desc_list
+                log.flush()
+                log.close()
             #rels = get_topics(words, mask)
             #print(rels.sum(axis=0))
             #print(collections.Counter(rels.argmax(axis=1)))

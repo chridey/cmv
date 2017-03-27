@@ -50,7 +50,7 @@ class AttentionWordLayer(lasagne.layers.MergeLayer):
                  custom_query=None, normalized=True, **kwargs):
         super(AttentionWordLayer, self).__init__(incomings, **kwargs)
         self.W_w = self.add_param(W_w, (incomings[0].output_shape[-1],d))
-        self.b_w = self.add_param(b_w, (1,))
+        self.b_w = self.add_param(b_w, (d,))
         self.normalized = normalized
 
         self.fixed_query = True
@@ -63,9 +63,9 @@ class AttentionWordLayer(lasagne.layers.MergeLayer):
     def get_output_for(self, inputs, **kwargs):
         #u = T.sum(inputs[0], axis=-1)
         if self.fixed_query:
-            u = T.dot(T.tanh(T.dot(inputs[0], self.W_w)), self.u_w)
+            u = T.dot(T.tanh(T.dot(inputs[0], self.W_w) + self.b_w), self.u_w)
         else:
-            u = T.batched_dot(T.tanh(T.dot(inputs[0], self.W_w)), self.u_w)
+            u = T.batched_dot(T.tanh(T.dot(inputs[0], self.W_w) + self.b_w), self.u_w)
             
         # set masked positions to large negative value
         u = u*inputs[1] - (1-inputs[1])*10000
