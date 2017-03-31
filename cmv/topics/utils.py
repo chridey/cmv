@@ -52,7 +52,7 @@ def load_data(metadata, embeddings,
                 for word in sentence['words']:
                     word = word.lower()
                     #TODO: always append quotes, intermediate discussion, urls
-                    if word in embeddings and counts[word] >= min_count and counts[word] <= max_count and word not in bottom_k_keys and word not in top_k_keys:
+                    if (hierarchical or word in embeddings) and counts[word] >= min_count and counts[word] <= max_count and word not in bottom_k_keys and word not in top_k_keys:
                         words.append(word)
                 if len(words) > max_sentence_len:
                     max_sentence_len = len(words)
@@ -84,11 +84,13 @@ def load_data(metadata, embeddings,
         
     print(len(indices))
     embeddings_array = [None] * len(indices)
-    embeddings_array[0] = np.random.uniform(-.2, .2, embeddings.layer1_size)
+    #embeddings_array[0] = np.random.uniform(-.2, .2, embeddings.layer1_size)
     for word in indices:
-        if word == UNKNOWN:
-            continue
-        embeddings_array[indices[word]] = embeddings[word]
+        if word not in embeddings:# == UNKNOWN:
+            #continue
+            embeddings_array[indices[word]] = np.random.uniform(-.2, .2, embeddings.layer1_size)
+        else:
+            embeddings_array[indices[word]] = embeddings[word]
         
     return words, mask, indices, counts, np.array(embeddings_array, dtype='float32')
 
@@ -99,8 +101,11 @@ def make_indices_mask_2d(posts, max_len, indices, add):
     mask = np.zeros((len(posts), max_len))
     for i,post in enumerate(posts):
         for j,word in enumerate(post):
-            if word not in indices and add:
-                indices[word] = len(indices)
+            if word not in indices:
+                if add:
+                    indices[word] = len(indices)
+                else:
+                    continue
                 #embeddings_array.append(embeddings[word])
             words[i,j] = indices[word]
             mask[i,j] = 1
@@ -122,8 +127,11 @@ def make_indices_mask_3d(posts, max_len, max_sentence_len, indices, add):
             for k,word in enumerate(sentence):
                 if k >= MAX_SENTENCE_LENGTH:
                     continue
-                if word not in indices and add:
-                    indices[word] = len(indices)
+                if word not in indices:
+                    if add:
+                        indices[word] = len(indices)
+                    else:
+                        continue
                 words[i,j,k] = indices[word]
                 mask[i,j,k] = 1
                 
