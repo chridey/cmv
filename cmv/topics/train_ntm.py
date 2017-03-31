@@ -197,8 +197,8 @@ def build_rmn(d_word, len_voc,
         all_params += lasagne.layers.get_all_params(network, trainable=True)
     else:
         all_params = lasagne.layers.get_all_params(network, trainable=True)
-    #updates = lasagne.updates.adam(loss, all_params, learning_rate=lr)
-    updates = lasagne.updates.nesterov_momentum(loss, all_params, learning_rate=lr, momentum=0.9)
+    updates = lasagne.updates.adam(loss, all_params, learning_rate=lr)
+    #updates = lasagne.updates.nesterov_momentum(loss, all_params, learning_rate=lr, momentum=0.9)
     
     if topic and influence:
         train_fn = theano.function([in_words, in_currmasks, in_dropmasks,
@@ -330,10 +330,12 @@ if __name__ == '__main__':
                      We=We, We_rr=We_rr,
                      gold=gold, gold_val=gold_val, op_idxs=op_idxs, op_idxs_val=op_idxs_val)
     else:
-        with open(args.load + '_indices.json') as f:
-            indices, indices_rr = json.load(f)
+        #with open(args.load + '_indices.json') as f:
+        #    indices, indices_rr = json.load(f)
 
         data = np.load(args.load + '.npz')
+
+        '''        
         words = data['words']
         mask = data['mask']
         words_val = data['words_val']
@@ -342,13 +344,26 @@ if __name__ == '__main__':
         mask_rr = data['mask_rr']
         words_rr_val = data['words_rr_val']
         mask_rr_val = data['mask_rr_val']
-        We = data['We']
-        We_rr = data['We_rr']
-        gold = data['gold']
-        gold_val = data['gold_val']
         op_idxs = data['op_idxs']
         op_idxs_val = data['op_idxs_val']
-                  
+        '''
+        
+        We = data['embeddings'] #data['We']
+        We_rr = data['embeddings'] #data['We_rr']
+        gold = data['train_labels'] #data['gold']
+        gold_val = data['val_labels'] #data['gold_val']
+        
+        words_rr = data['train_rr_words']
+        mask_rr = data['train_mask_rr_w']
+        words_rr_val = data['val_rr_words']
+        mask_rr_val = data['val_mask_rr_w']
+        op_idxs = np.arange(words_rr.shape[0])
+        op_idxs_val = np.arange(words_rr_val.shape[0])        
+        words = np.ones((words_rr.shape[0], 100))
+        mask = np.ones((words_rr.shape[0], 100))        
+        words_val = np.ones((words_rr_val.shape[0], 100))
+        mask_val = np.ones((words_rr_val.shape[0], 100))        
+        
     mask_rr_s_val = (mask_rr_val.sum(axis=-1) > 0).astype('float32')
     
     norm_We = We / np.linalg.norm(We, axis=1)[:, None]
@@ -360,9 +375,10 @@ if __name__ == '__main__':
     
     lr = 0.001
     eps = 1e-6
-    rev_indices = {}
-    for w in indices:
-        rev_indices[indices[w]] = w
+    if args.topic:
+        rev_indices = {}
+        for w in indices:
+            rev_indices[indices[w]] = w
 
     print 'compiling...'    
     train, train_ntm, get_topics, predict, ntm_layer, inf_layer = build_rmn(We.shape[1], We.shape[0],
