@@ -234,7 +234,7 @@ def build_rmn(d_word, len_voc,
 
     return train_fn, train_ntm_fn, rels_fn, predict_fn, l_recon, network
 
-def get_next_batch(idxs_batch, words, mask, words_rr, mask_rr, gold, num_negs):
+def get_next_batch(idxs_batch, words, mask, words_rr, mask_rr, gold, num_negs, p_drop):
         #op_idxs_batch = op_idxs[idxs_batch]
         words_batch = words[idxs_batch] #words[op_idxs_batch]
         mask_batch = mask[idxs_batch] #mask[op_idxs_batch]
@@ -264,7 +264,7 @@ def get_next_batch(idxs_batch, words, mask, words_rr, mask_rr, gold, num_negs):
 
         return words_batch, mask_batch, drop_mask, ns, nm, words_rr_batch, drop_mask_rr, mask_rr_s_batch, gold_batch, weights
 
-def main(data, K=10, num_negs=10, lambda_t=1, num_epochs=15, batch_size=100, topic=False, influence=False, descriptor_log=None): 
+def main(data, indices, K=10, num_negs=10, lambda_t=1, num_epochs=15, batch_size=100, topic=False, influence=False, descriptor_log=None): 
     words = data['words']
     mask = data['mask']
     words_val = data['words_val']
@@ -417,7 +417,7 @@ def main(data, K=10, num_negs=10, lambda_t=1, num_epochs=15, batch_size=100, top
             batch_size = gold_val.shape[0] // 10
             for i in range(gold_val.shape[0] // batch_size + 1):
                 idxs_batch = np.arange(i*batch_size,min((i+1)*batch_size, gold_val.shape[0]))
-                words_val_batch, mask_val_batch, _, _, _, words_rr_val_batch, mask_rr_val_batch, mask_rr_s_val_batch, _, _ = get_next_batch(idxs_batch, words_val[op_idxs_val], mask_val[op_idxs_val], words_rr_val, mask_rr_val, gold_val, num_negs)
+                words_val_batch, mask_val_batch, _, _, _, words_rr_val_batch, mask_rr_val_batch, mask_rr_s_val_batch, _, _ = get_next_batch(idxs_batch, words_val[op_idxs_val], mask_val[op_idxs_val], words_rr_val, mask_rr_val, gold_val, num_negs, p_drop)
                 if topic:
                     scores += predict(words_val_batch, mask_val_batch,
                                     words_rr_val_batch, mask_rr_val_batch, mask_rr_s_val_batch).tolist()
@@ -557,4 +557,4 @@ if __name__ == '__main__':
 
     for K in [10, 25, 50]:
         for lambda_t in [1, .1, .01, .001, .0001, .00001]:
-            main(data, K, args.num_negs, lambda_t, args.num_epochs, args.batch_size, args.topic, args.influence, args.descriptor_log)
+            main(data, indices, K, args.num_negs, lambda_t, args.num_epochs, args.batch_size, args.topic, args.influence, args.descriptor_log)
