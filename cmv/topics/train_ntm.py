@@ -28,13 +28,13 @@ from cmv.rnn.layers import AttentionWordLayer, TopicAttentionWordLayer, Weighted
 '''
 
 # assemble the network
-def build_rmn(d_word, len_voc, 
+def build_ntm(d_word, len_voc, 
     num_descs, max_len, We,
     max_post_length, max_sentence_length,
     len_voc_rr, We_rr, rd=100,
     freeze_words=True, eps=1e-5, lr=0.01, negs=10,
     num_layers=2, add_biases=False,
-    GRAD_CLIP=100, topic=False, influence=False, lambda_t=1.0):
+              GRAD_CLIP=100, topic=False, influence=False, lambda_t=1.0, combined=False, sentence_attention=False):
 
     # input theano vars
     in_words = T.imatrix(name='words')
@@ -147,22 +147,45 @@ def build_rmn(d_word, len_voc,
     #CBOW w/attn
     #now B x S x D
 
+    l_attn_rr_w = AttentionWordLayer([l_emb_rr_w, l_mask_rr_w], rd)
+    attention_layers = [l_attn_rr_w, None]    
     if topic and influence:
-        l_attn_rr_w = TopicAttentionWordLayer([l_emb_rr_w, l_mask_rr_w, l_rels], d_word)
-    else:
-        l_attn_rr_w = AttentionWordLayer([l_emb_rr_w, l_mask_rr_w], d_word)
-        
+        l_attn_rr_w = TopicAttentionWordLayer([l_emb_rr_w, l_mask_rr_w, l_rels], rd)
+        attention_layers[1] = l_attn_rr_w
+        if combined:
+            l_attn_rr_w = lasagne.layers.ConcatLayer(attention_layers, axis=-1)
+        else:
+            attention_layers[0] = None
+
     l_avg_rr_s = WeightedAverageWordLayer([l_emb_rr_w, l_attn_rr_w])
-    l_lstm_rr_s = lasagne.layers.LSTMLayer(l_avg_rr_s, rd,
-                                           nonlinearity=lasagne.nonlinearities.tanh,
-                                           grad_clipping=GRAD_CLIP,
-                                           mask_input=l_mask_rr_s)
-    #LSTM w/ attn
-    #now B x D
-    #TODO: is this attention layer needed? just take avg or last state of forward/backward?
-    l_attn_rr_s = AttentionSentenceLayer([l_lstm_rr_s, l_mask_rr_s], rd)        
-    l_lstm_rr_avg = WeightedAverageSentenceLayer([l_lstm_rr_s, l_attn_rr_s])
-    l_hid = l_lstm_rr_avg
+
+    if sentence_attn:
+        l_lstm_rr_s = lasagne.layers.LSTMLayer(l_avg_rr_s, rd,
+                                               nonlinearity=lasagne.nonlinearities.tanh,
+                                               grad_clipping=GRAD_CLIP,
+                                               mask_input=l_mask_rr_s)
+
+        #LSTM w/ attn
+        #now B x D
+        #TODO: is this attention layer needed? just take avg or last state of forward/backward?
+        l_attn_rr_s = AttentionSentenceLayer([l_lstm_rr_s, l_mask_rr_s], rd)        
+        l_lstm_rr_avg = WeightedAverageSentenceLayer([l_lstm_rr_s, l_attn_rr_s])
+        l_hid = l_lstm_rr_avg
+    else:
+        l_lstm_rr_s_fwd = lasagne.layers.LSTMLayer(l_avg_rr_s, rd,
+                                               nonlinearity=lasagne.nonlinearities.tanh,
+                                               grad_clipping=GRAD_CLIP,
+                                               mask_input=l_mask_rr_s)
+        l_lstm_rr_s_rev = lasagne.layers.LSTMLayer(l_avg_rr_s, rd,
+                                               nonlinearity=lasagne.nonlinearities.tanh,
+                                               grad_clipping=GRAD_CLIP,
+                                                   mask_input=l_mask_rr_s,
+                                                   backwards=True)
+
+        l_lstm_rr_s_fwd_slice = lasagne.layers.SliceLayer(l_lstm_rr_s_fwd, indices=-1, axis=1)
+        l_lstm_rr_s_rev_slice = lasagne.layers.SliceLayer(l_lstm_rr_s_rev, indices=-1, axis=1)
+        l_lstm_rr_s_bi = lasagne.layers.ConcatLayer([l_lstm_rr_s_fwd_slice, l_lstm_rr_s_rev_slice], axis=-1)
+        l_hid = l_lstm_rr_s_bi
 
     for num_layer in range(num_layers):
         l_hid = lasagne.layers.DenseLayer(l_hid, num_units=rd,
@@ -232,7 +255,65 @@ def build_rmn(d_word, len_voc,
                                     test_predictions,
                                     allow_input_downcast=True)
 
-    return train_fn, train_ntm_fn, rels_fn, predict_fn, l_recon, network
+    return train_fn, train_ntm_fn, rels_fn, predict_fn, l_recon, network, attention_layers
+
+def save_ntm_params(layer, filename):
+    params = lasagne.layers.get_all_params(layer)
+    p_values = [p.get_value() for p in params]
+    p_dict = dict(zip([str(p) for p in params], p_values))
+    cPickle.dump(p_dict, open('{}_ntm_params.pkl'.format(filename), 'wb'),
+                 protocol=cPickle.HIGHEST_PROTOCOL)
+    return p_dict
+
+def save_inf_params(layer, filename):
+    params = lasagne.layers.get_all_params(layer)
+    p_values = [p.get_value() for p in params]
+    p_dict = dict(zip(list(range(len(params))), p_values))
+    cPickle.dump(p_dict, open('{}_inf_params.pkl'.format(filename), 'wb'),
+                 protocol=cPickle.HIGHEST_PROTOCOL)
+    return p_dict
+
+def get_topic_neighbors(p_dict, We, filename, rev_indices):
+    # compute nearest neighbors of descriptors
+    R = p_dict['R']
+    log = open(filename, 'w')
+    for ind in range(len(R)):
+        desc = R[ind] / np.linalg.norm(R[ind])
+        sims = We.dot(desc.T)
+        ordered_words = np.argsort(sims)[::-1]
+        desc_list = [ rev_indices[w].encode('utf-8') for w in ordered_words[:10]]
+        log.write(' '.join(desc_list) + '\n')
+        print 'descriptor %d:' % ind
+        print desc_list
+    log.flush()
+    log.close()
+
+def get_top_attention_words(attention_layers, We, filename, rev_indices):
+    log = open(filename, 'w')
+    for i in attention_layers:
+        if attention_layers[i] is None:
+            continue
+        #WD x HD
+        W_w = attention_layers[0].W_w.get_value()
+        #HD
+        b_w = attention_layers[0].b_w.get_value()
+        #K x HD
+        u_w = attention_layers[0].u_w.get_value()
+        
+        if i == 0:
+            u_w = [u_w]
+
+        for ind in range(len(u_w)):
+            #now V x HD
+            h = np.tanh(We.dot(W_w) + b_w)
+            sims = h.dot(u_w[ind])
+            ordered_words = np.argsort(sims)[::-1]
+            desc_list = [ rev_indices[w].encode('utf-8') for w in ordered_words[:10]]
+            log.write(' '.join(desc_list) + '\n')
+            print ('{} attention descriptor {}:'.format(i, ind))
+            print (desc_list)
+    log.flush()
+    log.close()
 
 def get_next_batch(idxs_batch, words, mask, words_rr, mask_rr, gold, num_negs, p_drop, deterministic=True):
         #op_idxs_batch = op_idxs[idxs_batch]
@@ -297,9 +378,11 @@ def main(data, indices, K=10, num_negs=10, lambda_t=1, num_epochs=15, batch_size
     rev_indices = {}
     for w in indices:
         rev_indices[indices[w]] = w
+    for w in indices_rr:
+        rev_indices_rr[indices_rr[w]] = w
 
     print 'compiling...'    
-    train, train_ntm, get_topics, predict, ntm_layer, inf_layer = build_rmn(We.shape[1], We.shape[0],
+    train, train_ntm, get_topics, predict, ntm_layer, inf_layer, attention_layers = build_ntm(We.shape[1], We.shape[0],
                                                K, words.shape[1], We,
                                                words_rr.shape[1], words_rr.shape[2],
                                                We_rr.shape[0], We_rr,
@@ -344,6 +427,7 @@ def main(data, indices, K=10, num_negs=10, lambda_t=1, num_epochs=15, batch_size
     
     # training loop
     min_cost = float('inf')
+    max_val_score = 0
     num_batches = words_rr.shape[0] // batch_size + 1
     for epoch in range(num_epochs):
         cost = 0.
@@ -419,7 +503,7 @@ def main(data, indices, K=10, num_negs=10, lambda_t=1, num_epochs=15, batch_size
         if influence:
             print(gold_val.shape)
             scores = []
-            batch_size_val = gold_val.shape[0] // 10
+            batch_size_val = gold_val.shape[0] // 50
             for i in range(gold_val.shape[0] // batch_size_val + 1):
                 idxs_batch = np.arange(i*batch_size_val,min((i+1)*batch_size_val, gold_val.shape[0]))
                 words_val_batch, mask_val_batch, _, _, _, words_rr_val_batch, mask_rr_val_batch, mask_rr_s_val_batch, _, _ = get_next_batch(idxs_batch, words_val[op_idxs_val], mask_val[op_idxs_val], words_rr_val, mask_rr_val, gold_val, num_negs, p_drop, True)
@@ -433,34 +517,32 @@ def main(data, indices, K=10, num_negs=10, lambda_t=1, num_epochs=15, batch_size
             scores = np.nan_to_num(np.array(scores))
             predictions = scores > .5
             print(predictions.shape)
-            print('ROC AUC for {},{}:'.format(K, lambda_t), roc_auc_score(gold_val, scores))
+            val_score = roc_auc_score(gold_val, scores)
+            print('ROC AUC for {},{}: {}'.format(K, lambda_t, val_score))
             precision, recall, fscore, _ = precision_recall_fscore_support(gold_val, predictions)
             print('Precision for {},{}: {} Recall: {} F1: {}'.format(K, lambda_t, precision, recall, fscore))
-            print('Accuracy for {},{}: '.format(K, lambda_t), accuracy_score(gold_val, predictions))
-            
+            print('Accuracy for {},{}: {}'.format(K, lambda_t, accuracy_score(gold_val, predictions)))
+
+            #TODO: get modified We and We_rr if freeze is false
+            if val_score < max_val_score:
+                max_val_score = val_score
+                save_inf_params(inf_layer, descriptor_log + '_inf')
+                get_top_attention_words(attention_layers, We_rr, descriptor_log + '_inf', rev_indices_rr)
+
+                if topic:
+                    p_dict = save_ntm_params(ntm_layer, descriptor_log + '_inf')
+                    get_topic_neighbors(p_dict, We, descriptor_log + '_inf', rev_indices)
+
         # save params if cost went down
         if cost < min_cost:
             if topic:
                 min_cost = cost
-                params = lasagne.layers.get_all_params(ntm_layer)
-                p_values = [p.get_value() for p in params]
-                p_dict = dict(zip([str(p) for p in params], p_values))
-                cPickle.dump(p_dict, open('ntm_params.pkl', 'wb'),
-                    protocol=cPickle.HIGHEST_PROTOCOL)
+                save_ntm_params(ntm_layer, descriptor_log + '_ntm')
+                get_topic_neighbors(p_dict, We, descriptor_log + '_ntm', rev_indices)
+                if influence:
+                    save_inf_params(inf_layer, descriptor_log + '_ntm')
+                    get_top_attention_words(attention_layers, We_rr, descriptor_log + '_ntm', rev_indices_rr)
 
-                # compute nearest neighbors of descriptors
-                R = p_dict['R']
-                log = open(descriptor_log, 'w')
-                for ind in range(len(R)):
-                    desc = R[ind] / np.linalg.norm(R[ind])
-                    sims = We.dot(desc.T)
-                    ordered_words = np.argsort(sims)[::-1]
-                    desc_list = [ rev_indices[w].encode('utf-8') for w in ordered_words[:10]]
-                    log.write(' '.join(desc_list) + '\n')
-                    print 'descriptor %d:' % ind
-                    print desc_list
-                log.flush()
-                log.close()
             #rels = get_topics(words, mask)
             #print(rels.sum(axis=0))
             #print(collections.Counter(rels.argmax(axis=1)))
@@ -560,6 +642,12 @@ if __name__ == '__main__':
 
         data = np.load(args.load + '.npz')
 
-    for K in [10, 25, 50]:
-        for lambda_t in [1, .1, .01, .001, .0001, .00001]:
-            main(data, indices, K, args.num_negs, lambda_t, args.num_epochs, args.batch_size, args.topic, args.influence, args.descriptor_log)
+    if args.topic:
+        Ks = [10, 25, 50]
+        lambda_ts = [1, .1, .01, .001, .0001, .00001]
+    else:
+        Ks = [1]
+        lambda_ts = [1]
+    for K in Ks:
+        for lambda_t in lambda_ts:
+            main(data, indices, indices_rr, K, args.num_negs, lambda_t, args.num_epochs, args.batch_size, args.topic, args.influence, args.descriptor_log)
