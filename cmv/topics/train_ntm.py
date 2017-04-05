@@ -32,9 +32,9 @@ def build_ntm(d_word, len_voc,
     num_descs, max_len, We,
     max_post_length, max_sentence_length,
     len_voc_rr, We_rr, rd=100,
-    freeze_words=True, eps=1e-5, lr=0.01, negs=10,
+    freeze_words=False, eps=1e-5, lr=0.01, negs=10,
     num_layers=2, add_biases=False,
-              GRAD_CLIP=100, topic=False, influence=False, lambda_t=1.0, combined=False, sentence_attention=False):
+              GRAD_CLIP=100, topic=False, influence=False, lambda_t=1.0, combined=False, sentence_attn=False):
 
     # input theano vars
     in_words = T.imatrix(name='words')
@@ -144,20 +144,25 @@ def build_ntm(d_word, len_voc,
     #now B x S x W x D
     l_emb_rr_w = lasagne.layers.EmbeddingLayer(l_idxs_rr, len_voc_rr, d_word,
                                                W=lasagne.utils.floatX(We_rr))
+    # freeze embeddings
+    if freeze_words:
+        l_emb_rr_w.params[l_emb_rr_w.W].remove('trainable')
+    
     #CBOW w/attn
     #now B x S x D
 
     l_attn_rr_w = AttentionWordLayer([l_emb_rr_w, l_mask_rr_w], rd)
+    l_avg_rr_s = WeightedAverageWordLayer([l_emb_rr_w, l_attn_rr_w])    
     attention_layers = [l_attn_rr_w, None]    
     if topic and influence:
         l_attn_rr_w = TopicAttentionWordLayer([l_emb_rr_w, l_mask_rr_w, l_rels], rd)
+        l_avg_rr_s_t = WeightedAverageWordLayer([l_emb_rr_w, l_attn_rr_w])            
         attention_layers[1] = l_attn_rr_w
         if combined:
-            l_attn_rr_w = lasagne.layers.ConcatLayer(attention_layers, axis=-1)
+            l_avg_rr_s = lasagne.layers.ConcatLayer([l_avg_rr_s, l_avg_rr_s_t], axis=-1)
         else:
+            l_avg_rr_s = l_avg_rr_s_t
             attention_layers[0] = None
-
-    l_avg_rr_s = WeightedAverageWordLayer([l_emb_rr_w, l_attn_rr_w])
 
     if sentence_attn:
         l_lstm_rr_s = lasagne.layers.LSTMLayer(l_avg_rr_s, rd,
@@ -255,7 +260,7 @@ def build_ntm(d_word, len_voc,
                                     test_predictions,
                                     allow_input_downcast=True)
 
-    return train_fn, train_ntm_fn, rels_fn, predict_fn, l_recon, network, attention_layers
+    return train_fn, train_ntm_fn, rels_fn, predict_fn, l_recon, network, attention_layers, [l_emb, l_emb_rr_w]
 
 def save_ntm_params(layer, filename):
     params = lasagne.layers.get_all_params(layer)
@@ -290,15 +295,15 @@ def get_topic_neighbors(p_dict, We, filename, rev_indices):
 
 def get_top_attention_words(attention_layers, We, filename, rev_indices):
     log = open(filename, 'w')
-    for i in attention_layers:
+    for i in range(len(attention_layers)):
         if attention_layers[i] is None:
             continue
         #WD x HD
-        W_w = attention_layers[0].W_w.get_value()
+        W_w = attention_layers[i].W_w.get_value()
         #HD
-        b_w = attention_layers[0].b_w.get_value()
+        b_w = attention_layers[i].b_w.get_value()
         #K x HD
-        u_w = attention_layers[0].u_w.get_value()
+        u_w = attention_layers[i].u_w.get_value()
         
         if i == 0:
             u_w = [u_w]
@@ -348,7 +353,7 @@ def get_next_batch(idxs_batch, words, mask, words_rr, mask_rr, gold, num_negs, p
 
         return words_batch, mask_batch, drop_mask, ns, nm, words_rr_batch, drop_mask_rr, mask_rr_s_batch, gold_batch, weights
 
-def main(data, indices, K=10, num_negs=10, lambda_t=1, num_epochs=15, batch_size=100, topic=False, influence=False, descriptor_log=None): 
+def main(data, indices, indices_rr, K=10, num_negs=10, lambda_t=1, num_epochs=15, batch_size=100, topic=False, influence=False, descriptor_log=None, freeze_words=False): 
     words = data['words']
     mask = data['mask']
     words_val = data['words_val']
@@ -376,20 +381,23 @@ def main(data, indices, K=10, num_negs=10, lambda_t=1, num_epochs=15, batch_size
     lr = 0.05 #0.001
     eps = 1e-6
     rev_indices = {}
+    rev_indices_rr = {}
     for w in indices:
         rev_indices[indices[w]] = w
     for w in indices_rr:
         rev_indices_rr[indices_rr[w]] = w
 
     print 'compiling...'    
-    train, train_ntm, get_topics, predict, ntm_layer, inf_layer, attention_layers = build_ntm(We.shape[1], We.shape[0],
+    train, train_ntm, get_topics, predict, ntm_layer, inf_layer, attention_layers, embedding_layers = build_ntm(We.shape[1], We.shape[0],
                                                K, words.shape[1], We,
                                                words_rr.shape[1], words_rr.shape[2],
                                                We_rr.shape[0], We_rr,
-                                               freeze_words=False,
+                                               freeze_words=freeze_words,
                                                eps=eps, lr=lr, negs=num_negs, topic=topic,
                                                influence=influence,
-                                               lambda_t=lambda_t)
+                                               lambda_t=lambda_t,
+                                               combined=False,
+                                               sentence_attn=True)
     print 'done compiling, now training...'
 
     if descriptor_log is None:
@@ -498,6 +506,12 @@ def main(data, indices, K=10, num_negs=10, lambda_t=1, num_epochs=15, batch_size
             
         end_time = time.time()
         print(end_time-start_time, cost, cost_topic, cost_inf)
+
+        if not freeze_words:
+            if topic:
+                We = embedding_layers[0].W.get_value()
+            if influence:
+                We_rr = embedding_layers[1].W.get_value()
         
         #print predictions on validation set
         if influence:
@@ -524,7 +538,7 @@ def main(data, indices, K=10, num_negs=10, lambda_t=1, num_epochs=15, batch_size
             print('Accuracy for {},{}: {}'.format(K, lambda_t, accuracy_score(gold_val, predictions)))
 
             #TODO: get modified We and We_rr if freeze is false
-            if val_score < max_val_score:
+            if val_score > max_val_score:
                 max_val_score = val_score
                 save_inf_params(inf_layer, descriptor_log + '_inf')
                 get_top_attention_words(attention_layers, We_rr, descriptor_log + '_inf', rev_indices_rr)
@@ -537,7 +551,7 @@ def main(data, indices, K=10, num_negs=10, lambda_t=1, num_epochs=15, batch_size
         if cost < min_cost:
             if topic:
                 min_cost = cost
-                save_ntm_params(ntm_layer, descriptor_log + '_ntm')
+                p_dict = save_ntm_params(ntm_layer, descriptor_log + '_ntm')
                 get_topic_neighbors(p_dict, We, descriptor_log + '_ntm', rev_indices)
                 if influence:
                     save_inf_params(inf_layer, descriptor_log + '_ntm')
@@ -558,7 +572,7 @@ def main(data, indices, K=10, num_negs=10, lambda_t=1, num_epochs=15, batch_size
             '''
             
         print 'done with epoch: ', epoch, ' cost =',\
-            cost / words_batch.shape[0], 'time: ', end_time-start_time
+            cost / words.shape[0], 'time: ', end_time-start_time
     
 
 if __name__ == '__main__':
@@ -584,7 +598,9 @@ if __name__ == '__main__':
     parser.add_argument('--load')
     parser.add_argument('--save')
     parser.add_argument('--descriptor_log')
-            
+    
+    parser.add_argument('--freeze_words', action='store_true')
+    
     args = parser.parse_args()
 
     print('loading data...')
@@ -650,4 +666,4 @@ if __name__ == '__main__':
         lambda_ts = [1]
     for K in Ks:
         for lambda_t in lambda_ts:
-            main(data, indices, indices_rr, K, args.num_negs, lambda_t, args.num_epochs, args.batch_size, args.topic, args.influence, args.descriptor_log)
+            main(data, indices, indices_rr, K, args.num_negs, lambda_t, args.num_epochs, args.batch_size, args.topic, args.influence, args.descriptor_log, args.freeze_words)

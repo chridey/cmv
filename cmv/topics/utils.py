@@ -52,7 +52,7 @@ def load_data(metadata, embeddings,
                 for word in sentence['words']:
                     word = word.lower()
                     #TODO: always append quotes, intermediate discussion, urls
-                    if (hierarchical or word in embeddings) and counts[word] >= min_count and counts[word] <= max_count and word not in bottom_k_keys and word not in top_k_keys:
+                    if (hierarchical or word in embeddings) and counts[word] >= min_count and counts[word] <= max_count and word not in bottom_k_keys and (hierarchical or word not in top_k_keys):
                         words.append(word)
                 if len(words) > max_sentence_len:
                     max_sentence_len = len(words)
