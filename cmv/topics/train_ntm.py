@@ -171,12 +171,12 @@ def build_ntm(d_word, len_voc,
         d_p = h.dot(l_attn_rr_w.u_w.T)
         #now B x S x W x K
         #minimize distance between this and 1
-        norm_d_p = d_p / d_p.norm(2, axis=-1)
+        norm_d_p = d_p / d_p.norm(2, axis=-1)[:, :, :, None]
         ones = T.ones_like(norm_d_p)
-        norm_ones = ones / ones.norm(2, axis=-1)
+        norm_ones = ones / ones.norm(2, axis=-1)[:, :, :, None]
         distance = (norm_d_p - norm_ones).norm(2, axis=-1)
         #now B x S x W
-        dispersion_penalty = lambda_d*T.sum(distance)
+        dispersion_penalty = -lambda_d*T.sum(distance)
         
     if sentence_attn:
         l_lstm_rr_s = lasagne.layers.LSTMLayer(l_avg_rr_s, rd,
@@ -409,7 +409,7 @@ def main(data, indices, indices_rr, K=10, num_negs=10, lambda_t=1, eps=1e-6, lam
                                                eps=eps, lr=lr, negs=num_negs, topic=topic,
                                                influence=influence,
                                                lambda_t=lambda_t,
-                                               combined=False,
+                                               combined=True,
                                                sentence_attn=False)
     print 'done compiling, now training...'
 
@@ -545,10 +545,10 @@ def main(data, indices, indices_rr, K=10, num_negs=10, lambda_t=1, eps=1e-6, lam
             predictions = scores > .5
             print(predictions.shape)
             val_score = roc_auc_score(gold_val, scores)
-            print('ROC AUC for {},{},{}: {}'.format(K, lambda_t, eps, val_score))
+            print('ROC AUC for {},{},{},{}: {}'.format(K, lambda_t, eps, lambda_d, val_score))
             precision, recall, fscore, _ = precision_recall_fscore_support(gold_val, predictions)
-            print('Precision for {},{}: {} Recall: {} F1: {}'.format(K, lambda_t, precision, recall, fscore))
-            print('Accuracy for {},{}: {}'.format(K, lambda_t, accuracy_score(gold_val, predictions)))
+            print('Precision for {},{},{},{}: {} Recall: {} F1: {}'.format(K, lambda_t, eps, lambda_d, precision, recall, fscore))
+            print('Accuracy for {},{},{},{}: {}'.format(K, lambda_t, eps, lambda_d, accuracy_score(gold_val, predictions)))
 
             #TODO: get modified We and We_rr if freeze is false
             if val_score > max_val_score:
