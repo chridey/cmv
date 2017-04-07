@@ -165,18 +165,18 @@ def build_ntm(d_word, len_voc,
             attention_layers[0] = None
 
         #add additional loss for maximizing attention dispersion
-        emb_x = lasagne.layers.get_output(l_emb_rr_w)
-        #B x S x W x D
+        emb_x = l_emb_rr_w.W #lasagne.layers.get_output(l_emb_rr_w)
+        #V x D
         h = T.tanh(T.dot(emb_x, l_attn_rr_w.W_w) + l_attn_rr_w.b_w)
         d_p = h.dot(l_attn_rr_w.u_w.T)
-        #now B x S x W x K
-        #minimize distance between this and 1
-        norm_d_p = d_p / d_p.norm(2, axis=-1)[:, :, :, None]
+        #now V x K
+        #maximize distance between this and 1
+        norm_d_p = d_p / d_p.norm(2, axis=-1)[:, None]
         ones = T.ones_like(norm_d_p)
-        norm_ones = ones / ones.norm(2, axis=-1)[:, :, :, None]
+        norm_ones = ones / ones.norm(2, axis=-1)[:, None]
         distance = (norm_d_p - norm_ones).norm(2, axis=-1)
-        #now B x S x W
-        dispersion_penalty = -lambda_d*T.sum(distance)
+        #now V 
+        dispersion_penalty = -lambda_d*T.mean(distance)
         
     if sentence_attn:
         l_lstm_rr_s = lasagne.layers.LSTMLayer(l_avg_rr_s, rd,
@@ -322,15 +322,25 @@ def get_top_attention_words(attention_layers, We, filename, rev_indices):
         if i == 0:
             u_w = [u_w]
 
+        #V x D
+        h = np.tanh(We.dot(W_w) + b_w)
+        #now K x V
+        d_p = np.dot(u_w, h.T)
+        norm_d_p = d_p / np.linalg.norm(d_p, axis=0)
+
         for ind in range(len(u_w)):
-            #now V x HD
-            h = np.tanh(We.dot(W_w) + b_w)
-            sims = h.dot(u_w[ind])
+            sims = norm_d_p[ind]
+
             ordered_words = np.argsort(sims)[::-1]
             desc_list = [ rev_indices[w].encode('utf-8') for w in ordered_words[:10]]
             log.write(' '.join(desc_list) + '\n')
             print ('{} attention descriptor {}:'.format(i, ind))
             print (desc_list)
+            desc_list = [ rev_indices[w].encode('utf-8') for w in ordered_words[-10:]]
+            log.write('rev:' + ' '.join(desc_list) + '\n')
+            print ('{} attention descriptor rev {}:'.format(i, ind))
+            print (desc_list)
+
     log.flush()
     log.close()
 
@@ -675,7 +685,7 @@ if __name__ == '__main__':
         Ks = [10, 25, 50]
         lambda_ts = [1, .1, .01, .001, .0001, .00001]
         epss = [1e-5, 1e-4, 1e-3, .01, .1, 1]
-        lambda_ds = [1, .1, .01, .001, .0001, .00001]
+        lambda_ds = [1, .1, .01, .001, .0001, .00001][::-1]
     else:
         Ks = [1]
         lambda_ts = [1]
