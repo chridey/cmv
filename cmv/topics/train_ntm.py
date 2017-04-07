@@ -171,10 +171,10 @@ def build_ntm(d_word, len_voc,
         d_p = h.dot(l_attn_rr_w.u_w.T)
         #now V x K
         #maximize distance between this and 1
-        norm_d_p = d_p / d_p.norm(2, axis=-1)[:, None]
+        norm_d_p = d_p / d_p.norm(1, axis=-1)[:, None]
         ones = T.ones_like(norm_d_p)
-        norm_ones = ones / ones.norm(2, axis=-1)[:, None]
-        distance = (norm_d_p - norm_ones).norm(2, axis=-1)
+        norm_ones = ones / ones.norm(1, axis=-1)[:, None]
+        distance = (norm_d_p - norm_ones).norm(1, axis=-1)
         #now V 
         dispersion_penalty = -lambda_d*T.mean(distance)
         
@@ -326,7 +326,7 @@ def get_top_attention_words(attention_layers, We, filename, rev_indices):
         h = np.tanh(We.dot(W_w) + b_w)
         #now K x V
         d_p = np.dot(u_w, h.T)
-        norm_d_p = d_p / np.linalg.norm(d_p, axis=0)
+        norm_d_p = d_p / np.linalg.norm(d_p, ord=1, axis=0)
 
         for ind in range(len(u_w)):
             sims = norm_d_p[ind]
@@ -340,7 +340,13 @@ def get_top_attention_words(attention_layers, We, filename, rev_indices):
             log.write('rev:' + ' '.join(desc_list) + '\n')
             print ('{} attention descriptor rev {}:'.format(i, ind))
             print (desc_list)
-
+            
+            ordered_words = np.argsort(d_p[ind])[::-1]
+            desc_list = [ rev_indices[w].encode('utf-8') for w in ordered_words[:10]]
+            log.write('unnorm:' + ' '.join(desc_list) + '\n')
+            print ('{} attention descriptor unnorm {}:'.format(i, ind))
+            print (desc_list)
+            
     log.flush()
     log.close()
 
@@ -460,6 +466,12 @@ def main(data, indices, indices_rr, K=10, num_negs=10, lambda_t=1, eps=1e-6, lam
     min_cost = float('inf')
     max_val_score = 0
     num_batches = words_rr.shape[0] // batch_size + 1
+
+    #calculate weights
+    label_counts = collections.Counter(gold)
+    max_count = 1.*max(label_counts.values())
+    class_weights = {i:1/(label_counts[i]/max_count) for i in label_counts}
+
     for epoch in range(num_epochs):
         cost = 0.
         cost_topic = 0.
@@ -493,11 +505,6 @@ def main(data, indices, indices_rr, K=10, num_negs=10, lambda_t=1, eps=1e-6, lam
             drop_mask_rr *= mask_rr_batch
             #print(np.nonzero(drop_mask.sum(axis=-1))[0].shape)
 
-            #calculate weights
-            label_counts = collections.Counter(gold_batch)
-            max_count = 1.*max(label_counts.values())
-            class_weights = {i:1/(label_counts[i]/max_count) for i in label_counts}
-            
             weights = np.array([class_weights[i] for i in gold_batch]).astype(np.float32)
 
             #words_batch, mask_batch, drop_mask, ns, nm, words_rr_batch, drop_mask_rr, mask_rr_s_batch, gold_batch, weights = get_next_batch(idxs_batch, words, mask, words_rr, mask_rr, gold)
@@ -685,15 +692,15 @@ if __name__ == '__main__':
         Ks = [10, 25, 50]
         lambda_ts = [1, .1, .01, .001, .0001, .00001]
         epss = [1e-5, 1e-4, 1e-3, .01, .1, 1]
-        lambda_ds = [1, .1, .01, .001, .0001, .00001][::-1]
+        lambda_ds = [1, .1, .01, .001, .0001, .00001, 0][::-1]
     else:
         Ks = [1]
         lambda_ts = [1]
         epss = [1]
         lambda_ds = [1]
     for eps in epss:
-        for K in Ks:
-            for lambda_t in lambda_ts:
-                for lambda_d in lambda_ds:
+        for lambda_d in lambda_ds[1:]:
+            for K in Ks:
+                for lambda_t in lambda_ts:
                     main(data, indices, indices_rr, K, args.num_negs, lambda_t, eps, lambda_d, args.num_epochs, args.batch_size, args.topic, args.influence, args.descriptor_log, args.freeze_words)
-OA
+
