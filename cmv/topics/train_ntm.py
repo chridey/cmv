@@ -34,7 +34,7 @@ def build_ntm(d_word, len_voc,
     len_voc_rr, We_rr, rd=100,
     freeze_words=False, eps=1e-5, lr=0.01, negs=10,
     num_layers=2, add_biases=False,
-              GRAD_CLIP=100, topic=False, influence=False, lambda_t=1.0, combined=False, sentence_attn=False):
+              GRAD_CLIP=100, topic=False, influence=False, lambda_t=1.0, combined=False, sentence_attn=False, lambda_d=1):
 
     # input theano vars
     in_words = T.imatrix(name='words')
@@ -151,11 +151,11 @@ def build_ntm(d_word, len_voc,
     #CBOW w/attn
     #now B x S x D
 
-    l_attn_rr_w = AttentionWordLayer([l_emb_rr_w, l_mask_rr_w], rd)
+    l_attn_rr_w = AttentionWordLayer([l_emb_rr_w, l_mask_rr_w], d_word)
     l_avg_rr_s = WeightedAverageWordLayer([l_emb_rr_w, l_attn_rr_w])    
     attention_layers = [l_attn_rr_w, None]    
     if topic and influence:
-        l_attn_rr_w = TopicAttentionWordLayer([l_emb_rr_w, l_mask_rr_w, l_rels], rd)
+        l_attn_rr_w = TopicAttentionWordLayer([l_emb_rr_w, l_mask_rr_w, l_rels], d_word)
         l_avg_rr_s_t = WeightedAverageWordLayer([l_emb_rr_w, l_attn_rr_w])            
         attention_layers[1] = l_attn_rr_w
         if combined:
@@ -164,6 +164,20 @@ def build_ntm(d_word, len_voc,
             l_avg_rr_s = l_avg_rr_s_t
             attention_layers[0] = None
 
+        #add additional loss for maximizing attention dispersion
+        emb_x = lasagne.layers.get_output(l_emb_rr_w)
+        #B x S x W x D
+        h = T.tanh(T.dot(emb_x, l_attn_rr_w.W_w) + l_attn_rr_w.b_w)
+        d_p = h.dot(l_attn_rr_w.u_w.T)
+        #now B x S x W x K
+        #minimize distance between this and 1
+        norm_d_p = d_p / d_p.norm(2, axis=-1)
+        ones = T.ones_like(norm_d_p)
+        norm_ones = ones / ones.norm(2, axis=-1)
+        distance = (norm_d_p - norm_ones).norm(2, axis=-1)
+        #now B x S x W
+        dispersion_penalty = lambda_d*T.sum(distance)
+        
     if sentence_attn:
         l_lstm_rr_s = lasagne.layers.LSTMLayer(l_avg_rr_s, rd,
                                                nonlinearity=lasagne.nonlinearities.tanh,
@@ -212,7 +226,7 @@ def build_ntm(d_word, len_voc,
     hloss = lasagne.objectives.binary_crossentropy(predictions, gold)
     loss = lasagne.objectives.aggregate(hloss, weights, mode='normalized_sum')
     if topic and influence:
-        loss += weighted_tloss + ortho_penalty
+        loss += weighted_tloss + ortho_penalty + dispersion_penalty
         
     all_params = lasagne.layers.get_all_params(l_recon, trainable=True)
     
@@ -353,7 +367,7 @@ def get_next_batch(idxs_batch, words, mask, words_rr, mask_rr, gold, num_negs, p
 
         return words_batch, mask_batch, drop_mask, ns, nm, words_rr_batch, drop_mask_rr, mask_rr_s_batch, gold_batch, weights
 
-def main(data, indices, indices_rr, K=10, num_negs=10, lambda_t=1, num_epochs=15, batch_size=100, topic=False, influence=False, descriptor_log=None, freeze_words=False): 
+def main(data, indices, indices_rr, K=10, num_negs=10, lambda_t=1, eps=1e-6, lambda_d=0, num_epochs=15, batch_size=100, topic=False, influence=False, descriptor_log=None, freeze_words=False): 
     words = data['words']
     mask = data['mask']
     words_val = data['words_val']
@@ -379,7 +393,6 @@ def main(data, indices, indices_rr, K=10, num_negs=10, lambda_t=1, num_epochs=15
     p_dropout = 0.25 #0.75
     
     lr = 0.05 #0.001
-    eps = 1e-6
     rev_indices = {}
     rev_indices_rr = {}
     for w in indices:
@@ -397,7 +410,7 @@ def main(data, indices, indices_rr, K=10, num_negs=10, lambda_t=1, num_epochs=15
                                                influence=influence,
                                                lambda_t=lambda_t,
                                                combined=False,
-                                               sentence_attn=True)
+                                               sentence_attn=False)
     print 'done compiling, now training...'
 
     if descriptor_log is None:
@@ -532,7 +545,7 @@ def main(data, indices, indices_rr, K=10, num_negs=10, lambda_t=1, num_epochs=15
             predictions = scores > .5
             print(predictions.shape)
             val_score = roc_auc_score(gold_val, scores)
-            print('ROC AUC for {},{}: {}'.format(K, lambda_t, val_score))
+            print('ROC AUC for {},{},{}: {}'.format(K, lambda_t, eps, val_score))
             precision, recall, fscore, _ = precision_recall_fscore_support(gold_val, predictions)
             print('Precision for {},{}: {} Recall: {} F1: {}'.format(K, lambda_t, precision, recall, fscore))
             print('Accuracy for {},{}: {}'.format(K, lambda_t, accuracy_score(gold_val, predictions)))
@@ -661,9 +674,16 @@ if __name__ == '__main__':
     if args.topic:
         Ks = [10, 25, 50]
         lambda_ts = [1, .1, .01, .001, .0001, .00001]
+        epss = [1e-5, 1e-4, 1e-3, .01, .1, 1]
+        lambda_ds = [1, .1, .01, .001, .0001, .00001]
     else:
         Ks = [1]
         lambda_ts = [1]
-    for K in Ks:
-        for lambda_t in lambda_ts:
-            main(data, indices, indices_rr, K, args.num_negs, lambda_t, args.num_epochs, args.batch_size, args.topic, args.influence, args.descriptor_log, args.freeze_words)
+        epss = [1]
+        lambda_ds = [1]
+    for eps in epss:
+        for K in Ks:
+            for lambda_t in lambda_ts:
+                for lambda_d in lambda_ds:
+                    main(data, indices, indices_rr, K, args.num_negs, lambda_t, eps, lambda_d, args.num_epochs, args.batch_size, args.topic, args.influence, args.descriptor_log, args.freeze_words)
+OA
