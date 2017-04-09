@@ -251,7 +251,7 @@ def build_ntm(d_word, len_voc,
     hloss = lasagne.objectives.binary_crossentropy(predictions, gold)
     loss = lasagne.objectives.aggregate(hloss, weights, mode='normalized_sum')
     if topic and influence:
-        loss += weighted_tloss + ortho_penalty + dispersion_penalty
+        loss += weighted_tloss + ortho_penalty 
         
     all_params = lasagne.layers.get_all_params(l_recon, trainable=True)
     
