@@ -165,21 +165,44 @@ def build_ntm(d_word, len_voc,
             attention_layers[0] = None
 
         #add additional loss for maximizing attention dispersion
-        emb_x = lasagne.layers.get_output(l_emb_rr_w)
-        #B x S x W x D
-        h = T.tanh(T.dot(emb_x, l_attn_rr_w.W_w) + l_attn_rr_w.b_w)
-        #now B x S x W X K
-        d_p = h.dot(l_attn_rr_w.u_w.T)
-        #maximize distance between this and 1
-        norm_d_p = d_p / d_p.norm(1, axis=-1)[:, :, :, None]
-        ones = T.ones_like(norm_d_p)
-        norm_ones = ones / ones.norm(1, axis=-1)[:, :, :, None]
-        distance = (norm_d_p - norm_ones).norm(1, axis=-1) * mask_rr_w
-        #now B x S x W
-        avg_distance = T.sum(distance, axis=(1,2)) / T.sum(mask_rr_w, axis=(1,2))
-        #now B
-        dispersion_penalty = -lambda_d*lasagne.objectives.aggregate(avg_distance, weights, mode='normalized_sum')
+        if True:
+            emb_x = lasagne.layers.get_output(l_emb_rr_w)
+            #B x S x W x D
+            h = T.tanh(T.dot(emb_x, l_attn_rr_w.W_w) + l_attn_rr_w.b_w)
+            #now B x S x W X K
+            d_p = h.dot(l_attn_rr_w.u_w.T)
+            #maximize distance between this and 1
+            norm_d_p = d_p / d_p.norm(1, axis=-1)[:, :, :, None]
+            ones = T.ones_like(norm_d_p)
+
+            norm_ones = ones / ones.norm(1, axis=-1)[:, :, :, None]
+            distance = (norm_d_p - norm_ones).norm(1, axis=-1) * mask_rr_w
+            #now B x S x W
+            avg_distance = T.sum(distance, axis=(1,2)) / T.sum(mask_rr_w, axis=(1,2))
+            #now B
+            if lambda_d != 0:
+                dispersion_penalty = -lambda_d*lasagne.objectives.aggregate(avg_distance, weights, mode='normalized_sum')
+            else:
+                dispersion_penalty = 0
+        else:
+            emb_x = l_emb_rr_w.W
+            #V x D
+            h = T.tanh(T.dot(emb_x, l_attn_rr_w.W_w) + l_attn_rr_w.b_w)
+            #now V X K
+            d_p = h.dot(l_attn_rr_w.u_w.T)
+            #maximize distance between this and 1
+            norm_d_p = d_p / d_p.norm(1, axis=-1)[:, None]
+            ones = T.ones_like(norm_d_p)
+            
+            norm_ones = ones / ones.norm(1, axis=-1)[:, None]
+            distance = (norm_d_p - norm_ones).norm(1, axis=-1)
+            #now V 
         
+            if lambda_d != 0:
+                dispersion_penalty = -lambda_d*T.mean(distance)
+            else:
+                dispersion_penalty = 0
+
     if sentence_attn:
         l_lstm_rr_s = lasagne.layers.LSTMLayer(l_avg_rr_s, rd,
                                                nonlinearity=lasagne.nonlinearities.tanh,
@@ -427,7 +450,7 @@ def main(data, indices, indices_rr, K=10, num_negs=10, lambda_t=1, eps=1e-6, lam
                                                eps=eps, lr=lr, negs=num_negs, topic=topic,
                                                influence=influence,
                                                lambda_t=lambda_t,
-                                               combined=True,
+                                               combined=False,
                                                sentence_attn=False)
     print 'done compiling, now training...'
 
@@ -698,7 +721,7 @@ if __name__ == '__main__':
         Ks = [10, 25, 50]
         lambda_ts = [1, .1, .01, .001, .0001, .00001]
         epss = [1e-5, 1e-4, 1e-3, .01, .1, 1]
-        lambda_ds = [1, .1, .01, .001, .0001, .00001, 0][::-1]
+        lambda_ds = [0] #[1, .1, .01, .001, .0001, .00001, 0]]
     else:
         Ks = [1]
         lambda_ts = [1]
