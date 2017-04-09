@@ -165,18 +165,20 @@ def build_ntm(d_word, len_voc,
             attention_layers[0] = None
 
         #add additional loss for maximizing attention dispersion
-        emb_x = l_emb_rr_w.W #lasagne.layers.get_output(l_emb_rr_w)
-        #V x D
+        emb_x = lasagne.layers.get_output(l_emb_rr_w)
+        #B x S x W x D
         h = T.tanh(T.dot(emb_x, l_attn_rr_w.W_w) + l_attn_rr_w.b_w)
+        #now B x S x W X K
         d_p = h.dot(l_attn_rr_w.u_w.T)
-        #now V x K
         #maximize distance between this and 1
-        norm_d_p = d_p / d_p.norm(1, axis=-1)[:, None]
+        norm_d_p = d_p / d_p.norm(1, axis=-1)[:, :, :, None]
         ones = T.ones_like(norm_d_p)
-        norm_ones = ones / ones.norm(1, axis=-1)[:, None]
-        distance = (norm_d_p - norm_ones).norm(1, axis=-1)
-        #now V 
-        dispersion_penalty = -lambda_d*T.mean(distance)
+        norm_ones = ones / ones.norm(1, axis=-1)[:, :, :, None]
+        distance = (norm_d_p - norm_ones).norm(1, axis=-1) * mask_rr_w
+        #now B x S x W
+        avg_distance = T.sum(distance, axis=(1,2)) / T.sum(mask_rr_w, axis=(1,2))
+        #now B
+        dispersion_penalty = -lambda_d*lasagne.objectives.aggregate(avg_distance, weights, mode='normalized_sum')
         
     if sentence_attn:
         l_lstm_rr_s = lasagne.layers.LSTMLayer(l_avg_rr_s, rd,
@@ -570,21 +572,25 @@ def main(data, indices, indices_rr, K=10, num_negs=10, lambda_t=1, eps=1e-6, lam
             #TODO: get modified We and We_rr if freeze is false
             if val_score > max_val_score:
                 max_val_score = val_score
-                save_inf_params(inf_layer, descriptor_log + '_inf')
+                save_inf_params(inf_layer, '{}.{}.{}.{}.{}_inf'.format(descriptor_log, K,
+                                                                            lambda_t, eps, lambda_d))
                 get_top_attention_words(attention_layers, We_rr, descriptor_log + '_inf', rev_indices_rr)
 
                 if topic:
-                    p_dict = save_ntm_params(ntm_layer, descriptor_log + '_inf')
+                    p_dict = save_ntm_params(ntm_layer, '{}.{}.{}.{}.{}_inf'.format(descriptor_log, K,
+                                                                            lambda_t, eps, lambda_d))
                     get_topic_neighbors(p_dict, We, descriptor_log + '_inf', rev_indices)
 
         # save params if cost went down
         if cost < min_cost:
             if topic:
                 min_cost = cost
-                p_dict = save_ntm_params(ntm_layer, descriptor_log + '_ntm')
+                p_dict = save_ntm_params(ntm_layer, '{}.{}.{}.{}.{}_ntm'.format(descriptor_log, K,
+                                                                            lambda_t, eps, lambda_d))
                 get_topic_neighbors(p_dict, We, descriptor_log + '_ntm', rev_indices)
                 if influence:
-                    save_inf_params(inf_layer, descriptor_log + '_ntm')
+                    save_inf_params(inf_layer, '{}.{}.{}.{}.{}_ntm'.format(descriptor_log, K,
+                                                                            lambda_t, eps, lambda_d))
                     get_top_attention_words(attention_layers, We_rr, descriptor_log + '_ntm', rev_indices_rr)
 
             #rels = get_topics(words, mask)
@@ -699,7 +705,7 @@ if __name__ == '__main__':
         epss = [1]
         lambda_ds = [1]
     for eps in epss:
-        for lambda_d in lambda_ds[1:]:
+        for lambda_d in lambda_ds:
             for K in Ks:
                 for lambda_t in lambda_ts:
                     main(data, indices, indices_rr, K, args.num_negs, lambda_t, eps, lambda_d, args.num_epochs, args.batch_size, args.topic, args.influence, args.descriptor_log, args.freeze_words)
