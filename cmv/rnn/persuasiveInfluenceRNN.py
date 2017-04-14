@@ -126,18 +126,23 @@ class PersuasiveInfluenceRNN:
             l_avg_rr_s = HighwayLayer(l_avg_rr_s, num_units=l_avg_rr_s.output_shape[-1],
                                       nonlinearity=lasagne.nonlinearities.rectify,
                                       num_leading_axes=2)
-            
-        l_lstm_rr_s = lasagne.layers.LSTMLayer(l_avg_rr_s, rd,
-                                               nonlinearity=lasagne.nonlinearities.tanh,
-                                               grad_clipping=GRAD_CLIP,
-                                               mask_input=l_mask_rr_s)
-        
-        #LSTM w/ attn
-        #now B x D
-        l_attn_rr_s = AttentionSentenceLayer([l_lstm_rr_s, l_mask_rr_s], rd)        
-        l_lstm_rr_avg = WeightedAverageSentenceLayer([l_lstm_rr_s, l_attn_rr_s])
-        l_hid = l_lstm_rr_avg
-            
+
+        #bidirectional LSTM    
+        l_lstm_rr_s_fwd = lasagne.layers.LSTMLayer(l_avg_rr_s, rd,
+                                                   nonlinearity=lasagne.nonlinearities.tanh,
+                                                   grad_clipping=GRAD_CLIP,
+                                                   mask_input=l_mask_rr_s)
+        l_lstm_rr_s_rev = lasagne.layers.LSTMLayer(l_avg_rr_s, rd,
+                                                   nonlinearity=lasagne.nonlinearities.tanh,
+                                                   grad_clipping=GRAD_CLIP,
+                                                   mask_input=l_mask_rr_s,
+                                                   backwards=True)
+
+        l_lstm_rr_s_fwd_slice = lasagne.layers.SliceLayer(l_lstm_rr_s_fwd, indices=-1, axis=1)
+        l_lstm_rr_s_rev_slice = lasagne.layers.SliceLayer(l_lstm_rr_s_rev, indices=0, axis=1)
+        l_lstm_rr_s_bi = lasagne.layers.ConcatLayer([l_lstm_rr_s_fwd_slice, l_lstm_rr_s_rev_slice], axis=-1)
+        l_hid = l_lstm_rr_s_bi        
+                    
         for num_layer in range(num_layers):
             l_hid = lasagne.layers.DenseLayer(l_hid, num_units=rd,
                                           nonlinearity=lasagne.nonlinearities.rectify)
