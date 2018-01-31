@@ -4,7 +4,6 @@ import tempfile
 import re
 import os
 
-BIN_DIR = os.path.join(os.path.split(__file__)[0], '../config/2Taggers')
 class DiscourseParser:
     tab_re = re.compile("\t+")
     punct_sub = re.compile('[^a-zA-Z]*([a-zA-Z]+)[^a-zA-Z]*')
@@ -12,7 +11,6 @@ class DiscourseParser:
     MAX_CONNECTIVE_LENGTH = 6
     
     def __init__(self):
-        self.command = 'java -Xmx8G -cp bin:lib/* discourse.tagger.app.DiscourseTaggingRunner '
         with open(os.path.join(os.path.split(__file__)[0], 'markers_big')) as f:
             self.valid_connectives = set(f.read().splitlines())
 
@@ -84,20 +82,9 @@ class DiscourseParser:
                     
         return inter_sentence, [intra_sentence[i] for i in sorted(intra_sentence.keys())]
     
-    def parse(self, document):
-        infile = tempfile.NamedTemporaryFile('w')
-        infile.write(document)
-        outfile = '/tmp/discourse_output'
+    def parse(self, sentences, filename=None):
 
-        curdir = os.getcwd()
-        os.chdir(BIN_DIR)
-        p = subprocess.Popen(self.command.split() + [infile.name, outfile])
-        
-        out, err = p.communicate()
-
-        os.chdir(curdir)
-        
-        with open(outfile) as f:
-            discourse_data = f.read()
-
-        return self.processDiscourse(discourse_data, len(document.split('\n')))
+        assert(filename is not None)
+        with open(filename) as f:
+            data = f.read()
+            return self.processDiscourse(data, len(sentences))

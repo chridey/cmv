@@ -4,15 +4,17 @@ class Metadata(object):
     stemmer = nltk.stem.SnowballStemmer('english')
         
     def addMetadata(self, parsed_sentences):
-        metadata = dict(original=[],
-                        words=[],
-                        lemmas=[],
-                        stems=[],
-                        dependencies=[],
-                        ner=[],
-                        pos=[])                    
-
+        full_metadata = []
+        
         for parsed_sentence in parsed_sentences:
+            metadata = dict(original=[],
+                            words=[],
+                            lemmas=[],
+                            stems=[],
+                            dependencies=[],
+                            ner=[],
+                            pos=[])                    
+            
             try:
                 offset = parsed_sentence[0].i
             except IndexError:
@@ -45,13 +47,15 @@ class Metadata(object):
                     head = -1
                 dependencies.append((word.dep_.lower(),head))
 
-            metadata['words'].append(words)
-            metadata['lemmas'].append(lemmas)
-            metadata['stems'].append(stems)
-            metadata['pos'].append(pos)
-            metadata['ner'].append(ner)
-            metadata['dependencies'].append(dependencies)
+            metadata['words'] = words
+            metadata['lemmas'] = lemmas
+            metadata['stems'] = stems
+            metadata['pos'] = pos
+            metadata['ner'] = ner
+            metadata['dependencies'] = dependencies
 
-        return metadata
+            full_metadata.append(metadata)
+            
+        return full_metadata
             
 

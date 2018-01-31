@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """
 In preprocessing, we remove the edit lines in a reply, and normalize all quote lines and urls into special tokens.
+Author
+Chenhao Tan
+
+adapted by Chris Hidey
 """
 
 import re

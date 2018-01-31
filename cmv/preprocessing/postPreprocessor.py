@@ -6,13 +6,20 @@ from cmv.preprocessing.preprocess import normalize_from_body
 from cmv.preprocessing.metadata import Metadata
 from cmv.preprocessing.discourseClassifier import DiscourseClassifier
 from cmv.preprocessing.frameClassifier import FrameClassifier
-from cmv.preprocessing.sentimentClassifier import SentimentClassifier
 
 class PostPreprocessor:
     cmv_pattern = re.compile('cmv:?', re.IGNORECASE)
     nlp = English()
     
-    def __init__(self, data, op=False, lower=False, discourse=True, frames=True, sentiment=False):
+    def __init__(self, data, op=False, lower=False, frames=True, discourse=False):
+        '''
+        data - text, a string
+        op - boolean indicating whether to remove the auto-moderator additions to OPs in CMV
+        lower - boolean indicating whether to lowercase
+        discourse - boolean for discourse features
+        frames - boolean for frame semantic features
+        '''
+        
         self.data = data
         self.op = op
         self.lower = lower
@@ -27,10 +34,6 @@ class PostPreprocessor:
         if frames:
             self.frameClassifier = FrameClassifier()
 
-        self.sentimentClassifier = None
-        if sentiment:
-            self.sentimentClassifier = SentimentClassifier()
-        
         self._processedData = None
         
     def cleanup(self, text):
@@ -43,6 +46,12 @@ class PostPreprocessor:
         return parsed_text
         
     def preprocess(self, text):
+        '''
+        takes in a text string and returns a list of metadata dictionaries, one for each sentence
+        
+        text - a document string
+        '''
+        
         parsed_text = list(self.cleanup(text))
         split_sentences = []
         for paragraph in parsed_text:
@@ -50,12 +59,10 @@ class PostPreprocessor:
                 split_sentences.append(sent)
 
         processed_post = self.metadata.addMetadata(split_sentences)
+        if self.frameClassifier:
+            processed_post = self.frameClassifier.addFrames(processed_post)        
         if self.discourseClassifier:
             processed_post.update(self.discourseClassifier.addDiscourse(processed_post))
-        if self.frameClassifier:
-            processed_post.update(self.frameClassifier.addFrames(processed_post))
-        if self.sentimentClassifier:
-            processed_post.update(self.sentimentClassifier.addSentiment(processed_post))
 
         return processed_post
 
@@ -64,19 +71,6 @@ class PostPreprocessor:
         if self._processedData is None:
             self._processedData = self.preprocess(self.data)
         return self._processedData
-    
-    @property
-    def length(self):
-        return len(self.processedData['words'])
-    
-    def __iter__(self):
-        for i in self.length:
-            yield {key: self.processedData[key][i] for key in self.processedData}
-
-    def iterMetadata(self):
-        for key in self.processedData:
-            for metadata in self.processedData[key]:
-                yield key,metadata
-                
+                    
     
     

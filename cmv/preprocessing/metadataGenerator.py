@@ -3,25 +3,30 @@ import json
 
 from cmv.preprocessing.postPreprocessor import PostPreprocessor
 
-class MetadataGenerator:
-    def __init__(self, train_filename, val_filename, num_responses=2**32, extend=True,
-                 discourse=True, frames=True, sentiment=False):
+class MetadataGenerator(object):
+    def __init__(self, train_filename, val_filename, test_filename=None,
+                 num_responses=2**32, extend=True,
+                 discourse=True, frames=True, num_examples=None):
         self.train_filename = train_filename
         self.val_filename = val_filename
+        self.test_filename = test_filename
         self.num_responses = num_responses
         self.extend = extend
         self.border = 'INTERMEDIATE_DISCUSSION'
 
         self.discourse = discourse
         self.frames = frames
-        self.sentiment = sentiment
+
+        self.num_examples = int(num_examples)
         
         self._data = None
                 
     def _load_file(self, filename):
         pairs = []
         with bz2.BZ2File(filename) as f:
-            for line in f:
+            for index,line in enumerate(f):
+                if index >= self.num_examples:
+                    break
                 pairs.append(json.loads(line))
         return pairs
 
@@ -33,22 +38,17 @@ class MetadataGenerator:
         train = self._load_file(self.train_filename)
         val = self._load_file(self.val_filename)
         
-        train_op, train_titles, train_pos, train_pos_indices, train_neg, train_neg_indices = self.processData(train)
-        val_op, val_titles, val_pos, val_pos_indices, val_neg, val_neg_indices = self.processData(val)
+        train_metadata = self.processData(train)
+        val_metadata = self.processData(val)
 
-        self._data = dict(train_op=train_op,
-                          train_titles=train_titles,
-                          train_pos=train_pos,
-                          train_pos_indices=train_pos_indices,
-                          train_neg=train_neg,
-                          train_neg_indices=train_neg_indices,
-                          val_op=val_op,
-                          val_titles=val_titles,
-                          val_pos=val_pos,
-                          val_pos_indices=val_pos_indices,
-                          val_neg=val_neg,
-                          val_neg_indices=val_neg_indices)
-        
+        self._data = dict(train=train_metadata,
+                          val=val_metadata)
+
+        if self.test_filename is not None:
+            test = self._load_file(self.test_filename)
+            test_metadata = self.processData(test)
+            self._data.update(test=test_metadata)
+
         return self._data
     
     def processData(self, pairs):
@@ -71,14 +71,12 @@ class MetadataGenerator:
                     post += comment['body']
                 else:
                     neg.append(PostPreprocessor(comment['body'],
-                                                discourse=self.discourse, frames=self.frames,
-                                                sentiment=self.sentiment).processedData)
+                                                discourse=self.discourse, frames=self.frames).processedData)
                     neg_indices.append(pair_index)
                     
             if self.extend:
                 neg.append(PostPreprocessor(comment['body'],
-                                            discourse=self.discourse, frames=self.frames,
-                                            sentiment=self.sentiment).processedData)
+                                            discourse=self.discourse, frames=self.frames).processedData)
                 neg_indices.append(pair_index)
                 
             post = ''
@@ -89,18 +87,18 @@ class MetadataGenerator:
                     post += comment['body']
                 else:
                     pos.append(PostPreprocessor(comment['body'],
-                                                discourse=self.discourse, frames=self.frames,
-                                                sentiment=self.sentiment).processedData)
+                                                discourse=self.discourse, frames=self.frames).processedData)
                     pos_indices.append(pair_index)
 
             if self.extend:
                 pos.append(PostPreprocessor(comment['body'],
-                                            discourse=self.discourse, frames=self.frames,
-                                            sentiment=self.sentiment).processedData)
+                                            discourse=self.discourse, frames=self.frames).processedData)
                 pos_indices.append(pair_index)
                 
-            titles.append(PostPreprocessor(pair['op_title'], discourse=False, frames=False).processedData)
+            titles.append(PostPreprocessor(pair['op_title'], discourse=self.discourse, frames=self.frames).processedData)
         
-        return op, titles, pos, pos_indices, neg, neg_indices
+        return dict(op=op, titles=titles, pos=pos,
+                    pos_indices=pos_indices, neg=neg,
+                    neg_indices=neg_indices)
 
         
