@@ -4,12 +4,12 @@ class Post:
 
     def getAllWords(self, lower=False):
         words = []
-        for sentence in self.metadata['words']:
-            if lower:
-                for word in sentence:
+        for sentence in self.metadata:
+            for word in sentence['words']:
+                if lower:
                     words.append(word.lower())
-            else:
-                words.extend(sentence)
+                else:
+                    words.append(word)
         return words
 
     @property
