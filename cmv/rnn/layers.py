@@ -90,66 +90,16 @@ class AttentionWordLayer(lasagne.layers.MergeLayer):
         #return (None,input_shapes[0][1],input_shapes[0][-1])
         return (None,input_shapes[0][1],input_shapes[0][2])
 
-class TopicAttentionWordLayer(lasagne.layers.MergeLayer):
-    #uses a fixed "query" for each topic, requires a K-long probability vector of topics for each datapoint
-    #this returns weights that can be used in the averaging layer in place of the mask
-    def __init__(self, incomings, d, W_w=lasagne.init.Normal(),
-                 u_w=lasagne.init.Normal(), b_w=lasagne.init.Normal(),
-                 normalized=True, **kwargs):
-        super(TopicAttentionWordLayer, self).__init__(incomings, **kwargs)
-        self.W_w = self.add_param(W_w, (incomings[0].output_shape[-1],d))
-        self.b_w = self.add_param(b_w, (d,))
-        self.normalized = normalized
-
-        self.u_w = self.add_param(u_w, (incomings[-1].output_shape[-1], d))
-        
-    def get_output_for(self, inputs, **kwargs):
-        #inputs[0] is the B x S x W x D data
-        #inputs[1] is the B x S x W x D mask
-        #inputs[2] is the B x K topic probability
-        #u_w is a K x D basis matrix
-        
-        h = T.tanh(T.dot(inputs[0], self.W_w) + self.b_w)
-
-        #now a B x D matrix
-        u_w = T.dot(inputs[2], self.u_w)
-
-        #multiply the post/document-specific attention vector by each word in the document
-        #now B x S x W
-        u = T.sum(h * u_w[:, None, None, :], axis=-1)
-            
-        # set masked positions to large negative value
-        u = u*inputs[1] - (1-inputs[1])*10000
-        
-        #now batch_size x post_length x sentence_length x 1 but need to normalize via softmax
-        #over 2nd axis, and also multiply by the sentence mask
-
-        # normalize over sentence_length (->large negative values = 0)
-        if not self.normalized:
-            return T.reshape(u, (inputs[0].shape[0], inputs[0].shape[1], inputs[0].shape[2]))
-        u = T.reshape(u, (inputs[0].shape[0]*inputs[0].shape[1], inputs[0].shape[2]))
-        alpha = T.nnet.softmax(u)
-        alpha = T.reshape(alpha, (inputs[0].shape[0], inputs[0].shape[1], inputs[0].shape[2]))
-
-        #now return the weighted sum
-        #return T.sum(inputs[0] * alpha[:,:,:, None], axis=2)
-
-        return alpha
-        
-    def get_output_shape_for(self, input_shapes):
-        
-        #return (None,input_shapes[0][1],input_shapes[0][-1])
-        return (None,input_shapes[0][1],input_shapes[0][2])
-
 class AttentionSentenceLayer(lasagne.layers.MergeLayer):
     #uses either a fixed "query" for the important words or another layer
     #this returns weights that can be used in the averaging layer in place of the mask
     def __init__(self, incomings, d, W_s=lasagne.init.Normal(),
                  u_s=lasagne.init.Normal(), b_s=lasagne.init.Normal(),
-                 custom_query=None, **kwargs):
+                 custom_query=None, nonlinearity=T.tanh,
+                 hidden_layers=1, **kwargs):
         super(AttentionSentenceLayer, self).__init__(incomings, **kwargs)
-        self.W_s = self.add_param(W_s, (incomings[0].output_shape[-1], d))
-        self.b_s = self.add_param(b_s, (d,))
+        self.W_s = [self.add_param(W_s, (incomings[0].output_shape[-1], d)) for i in range(hidden_layers)]
+        self.b_s = [self.add_param(b_s, (d,)) for i in range(hidden_layers)]
         
         self.fixed_query = True
         if custom_query is not None:
@@ -157,13 +107,19 @@ class AttentionSentenceLayer(lasagne.layers.MergeLayer):
             self.u_s = lasagne.layers.get_output(custom_query)
         else:
             self.u_s = self.add_param(u_s, (d,))        
+        self.nonlinearity = nonlinearity
+        self.hidden_layers = hidden_layers
         
     def get_output_for(self, inputs, **kwargs):
         #u = T.sum(inputs[0], axis=-1)
+        tmp = inputs[0]
+        for i in range(self.hidden_layers):
+            tmp = self.nonlinearity(T.dot(tmp, self.W_s[i]) + self.b_s[i][None, None, :])
+                   
         if self.fixed_query:
-            u = T.dot(T.tanh(T.dot(inputs[0], self.W_s) + self.b_s), self.u_s)            
+            u = T.dot(tmp, self.u_s)            
         else:
-            u = T.batched_dot(T.tanh(T.dot(inputs[0], self.W_s)), self.u_s)
+            u = T.batched_dot(tmp, self.u_s)
         
         # set masked positions to large negative value
         if len(inputs) > 1:
@@ -175,8 +131,7 @@ class AttentionSentenceLayer(lasagne.layers.MergeLayer):
         u = T.reshape(u, (inputs[0].shape[0], inputs[0].shape[1]))
         alpha = T.nnet.softmax(u)
 
-        #now return the weighted sum
-        #return T.sum(inputs[0] * alpha[:,:, None], axis=1)
+        #now return the weights
 
         return alpha
         
@@ -268,4 +223,66 @@ class HighwayLayer(lasagne.layers.Layer):
 
         return T.mul(t,g) + T.mul(1-t, input)
 
+class MemoryLayer(lasagne.layers.MergeLayer):
+    def __init__(self, incomings, W_r=lasagne.init.GlorotUniform(),
+                 hops=3, q=lasagne.init.Normal(), query=None, **kwargs):
+        
+        super(MemoryLayer, self).__init__(incomings, **kwargs)
+
+        d = incomings[0].output_shape[-1]
+        self.W_r = self.add_param(W_r, (d, d), name="W_r")
+        self.hops = hops
+        self.d = d
+        
+        self.fixed_query = True
+        if query is not None:
+            self.fixed_query = False
+            self.q = lasagne.layers.get_output(query)
+        else:
+            self.q = self.add_param(q, (d,))        
+
+    def get_output_shape_for(self, input_shape):
+        #B x D
+        return (None, self.d)
+        
+    def get_output_for(self, inputs, **kwargs):
+        q = self.q
+        for i in range(self.hops):
+            if self.fixed_query and not i:
+                u = T.dot(inputs[0], q)            
+            else:
+                u = T.batched_dot(inputs[0], q)
+
+            # set masked positions to large negative value
+            if len(inputs) > 1:
+                u = u*inputs[1] - (1-inputs[1])*10000
+
+            #now batch_size x post_length x 1 but need to normalize via softmax
+
+            # normalize over post_length (->large negative values = 0)
+            u = T.reshape(u, (inputs[0].shape[0], inputs[0].shape[1]))
+            alpha = T.nnet.softmax(u)
+
+            #now B x S
+            o = T.dot(T.sum(inputs[0] * alpha[:,:,None], axis=1), self.W_r)
+            if self.fixed_query:
+                q = q + o
+            else:
+                q = q + o
+
+        return q
+
+
+class MyConcatLayer(lasagne.layers.MergeLayer):
+    def __init__(self, incomings, **kwargs):
+        super(MyConcatLayer, self).__init__(incomings, **kwargs)  # MergeLayer constructor requires list of incoming layers
+        
+    def get_output_shape_for(self, input_shapes):
+        lstm_shape, other_shape = input_shapes
+        return (lstm_shape[0], lstm_shape[1], lstm_shape[2] + other_shape[-1])
+    
+    def get_output_for(self, inputs, **kwargs):
+        lstm_input, other_input = inputs
+        other_input = T.repeat(other_input.dimshuffle(0, 'x', 1), lstm_input.shape[1], axis=1)  # repeat along time dimension
+        return T.concatenate((lstm_input, other_input), axis=-1)
 
