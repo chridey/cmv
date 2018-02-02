@@ -1,10 +1,15 @@
+import collections
+
 from cmv.preprocessing.thread import Thread
 
 class DataIterator:
-    def __init__(self, data):
+    def __init__(self, data, downsample_pos=5, downsample_neg=15):
         self.data = data
-
+        self.downsample = dict(pos=downsample_pos, neg=downsample_neg)
+        
     def iterPosts(self):
+        counts = dict(pos=collections.Counter(), neg=collections.Counter())
+        
         for label in ('pos', 'neg'):
             for index,thread in enumerate(self.data[label]):
                 #also get the original post and title if they exist
@@ -12,6 +17,10 @@ class DataIterator:
                 title = None
                 indices = '{}_indices'.format(label) 
                 if indices in self.data:
+                    if counts[label][self.data[indices][index]] > self.downsample[label]:
+                        continue
+                    counts[label][self.data[indices][index]] += 1
+                    
                     if 'op' in self.data:
                         originalPost = self.data['op'][self.data[indices][index]]
                     
@@ -43,7 +52,7 @@ class PairedDataIterator(DataIterator):
         iterate over posts in paired order, positives and negatives
         '''
         assert(len(self.data['pos']) == len(self.data['neg']))
-        for i in range(len(self.data['pos'])):
+        for i in range(len(self.data['op'])):
             originalPost = self.data['op'][i]
             title = self.data['titles'][i]
             pos = self.data['pos'][i]

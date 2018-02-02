@@ -36,9 +36,9 @@ class Metadata(object):
                 if not len(word.string.strip()):
                     continue
 
-                words.append(unicode(word.string))
+                words.append(unicode(word.string.strip()))
                 lemmas.append(word.lemma_)
-                stems.append(self.stemmer.stem(unicode(word.string)))
+                stems.append(self.stemmer.stem(unicode(word.string.strip())))
                 pos.append(word.tag_)
                 ner.append('O')
                 

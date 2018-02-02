@@ -5,7 +5,7 @@ from cmv.preprocessing.postPreprocessor import PostPreprocessor
 
 class MetadataGenerator(object):
     def __init__(self, train_filename, val_filename, test_filename=None,
-                 num_responses=2**32, extend=True,
+                 num_responses=15, extend=True,
                  discourse=True, frames=True, num_examples=None):
         self.train_filename = train_filename
         self.val_filename = val_filename
@@ -17,8 +17,11 @@ class MetadataGenerator(object):
         self.discourse = discourse
         self.frames = frames
 
-        self.num_examples = int(num_examples)
-        
+        if num_examples is not None:
+            self.num_examples = int(num_examples)
+        else:
+            self.num_examples = 2**32
+            
         self._data = None
                 
     def _load_file(self, filename):
@@ -58,13 +61,18 @@ class MetadataGenerator(object):
         pos_indices = []
         neg = []
         neg_indices = []
-        
+    
         for pair_index,pair in enumerate(pairs):
+            if not(len(pair['op_text'])) or '[deleted]' in pair['op_text'] or '[removed]' in pair['op_text']:
+                continue
+            
             op.append(PostPreprocessor(pair['op_text'], op=True,
-                                       discourse=False, frames=False).processedData)
+                                       discourse=self.discourse, frames=self.frames).processedData)
 
             post = ''
             for comment_index,comment in enumerate(pair['negative']['comments'][:self.num_responses]):
+                if '[deleted]' in comment['body'] or '[removed]' in comment['body']:
+                    continue
                 if self.extend:
                     if comment_index > 0:
                         post += '\n' + self.border + '\n'
@@ -75,12 +83,15 @@ class MetadataGenerator(object):
                     neg_indices.append(pair_index)
                     
             if self.extend:
-                neg.append(PostPreprocessor(comment['body'],
+                neg.append(PostPreprocessor(post,
                                             discourse=self.discourse, frames=self.frames).processedData)
                 neg_indices.append(pair_index)
                 
             post = ''
             for comment_index,comment in enumerate(pair['positive']['comments'][:self.num_responses]):
+                if '[deleted]' in comment['body'] or '[removed]' in comment['body']:
+                    continue
+                
                 if self.extend:
                     if comment_index > 0:
                         post += '\n' + self.border + '\n'
@@ -91,7 +102,7 @@ class MetadataGenerator(object):
                     pos_indices.append(pair_index)
 
             if self.extend:
-                pos.append(PostPreprocessor(comment['body'],
+                pos.append(PostPreprocessor(post,
                                             discourse=self.discourse, frames=self.frames).processedData)
                 pos_indices.append(pair_index)
                 

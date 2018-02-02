@@ -6,6 +6,7 @@ class Post:
         words = []
         for sentence in self.metadata:
             for word in sentence['words']:
+                word = word.strip()
                 if lower:
                     words.append(word.lower())
                 else:
@@ -15,13 +16,6 @@ class Post:
     @property
     def keys(self):
         return self.metadata.keys()
-
-    def post(self, key=None, lower=False):
-        if key is None:
-            return self.metadata
-        if not lower:
-            return self.metadata[key]
-        return [[i.lower() for i in j] for j in self.metadata[key]]
         
 class Thread:
     def __init__(self, response, originalPost=None, title=None):
