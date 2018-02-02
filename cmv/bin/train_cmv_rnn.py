@@ -115,11 +115,11 @@ if __name__ == '__main__':
     parser.add_argument('--num_epochs', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=100)
 
-    parser.add_argument('--lambda_w', type=float, default=0)
-    parser.add_argument('-n', '--num_layers', type=int, default=0)
-    parser.add_argument('-l', '--learning_rate', type=int, default=0)
-    parser.add_argument('--word_dropout', type=float, default=0)
-    parser.add_argument('--dropout', type=float, default=0)
+    parser.add_argument('--lambda_w')
+    parser.add_argument('-n', '--num_layers')
+    parser.add_argument('-l', '--learning_rate')
+    parser.add_argument('--word_dropout')
+    parser.add_argument('--dropout')
     
     parser.add_argument('--discourse', default=0)
     parser.add_argument('--frames', type=int, default=0)
@@ -188,24 +188,26 @@ if __name__ == '__main__':
 
     lambda_ws = [0, .0000001, .000001, .00001, .0001]
     if args.lambda_w:
-        lambda_ws = [args.lambda_w] #TODO: args.lambda_w.split
+        lambda_ws = map(float(args.lambda_w.split(','))) #[args.lambda_w] #TODO: args.lambda_w.split
     
     num_layerses = [2,1]
     if args.num_layers:
-        num_layerses = [args.num_layers]
+        num_layerses = map(int(args.num_layers.split(','))) #[args.num_layers]
     
     learning_rates = [0.05, 0.01]
     if args.learning_rate:
-        learning_rates = [args.learning_rate]
+        learning_rates = map(float(args.learning_rate.split(','))) #[args.learning_rate]
 
     word_dropouts = [0.5, 0.25, 0, 0.75]
     if args.word_dropout:
-        word_dropouts = [args.word_dropout]
+        word_dropouts = map(float(args.word_dropout.split(','))) #[args.word_dropout]
         
     dropouts = [0.25, 0, 0.5, 0.75]
     if args.dropout:
-        dropouts = [args.dropout]
+        dropouts = map(float(args.dropout.split(','))) #[args.dropout]
 
+    #0 . 0.5 . 0 . 2 . 0.05
+        
     print('training...')
     np.save('{}.gold'.format(args.outputfile), val_y)
     for lambda_w in lambda_ws: 
