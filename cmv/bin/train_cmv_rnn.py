@@ -18,14 +18,17 @@ def build_data(metadata, vocab, lower,
     
     data = collections.defaultdict(list)    
     new_metadata = collections.defaultdict(list)
-    for split in ('train', 'val'):
+    for split in ('train', 'val', 'test'):
+        if split not in metadata:
+            print('WARNING: {} not in metadata'.format(split))
+            continue
         for name in ('pos', 'neg'):
-            for index, post in enumerate(metadata[split+'_'+name]):
-                if split+'_'+name+'_indices' in metadata:
-                    op_index = metadata[split+'_'+name+'_indices'][index]
-                    op = metadata[split+'_op'][op_index]
-                    if split+'_titles' in metadata:
-                        title = metadata[split+'_titles'][op_index]
+            for index, post in enumerate(metadata[split][name]):
+                if name+'_indices' in metadata[split]:
+                    op_index = metadata[split][name+'_indices'][index]
+                    op = metadata[split]['op'][op_index]
+                    if 'titles' in metadata[split]:
+                        title = metadata[split]['titles'][op_index]
                     else:
                         title = []
                 else:
