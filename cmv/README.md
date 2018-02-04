@@ -11,10 +11,10 @@ conda create -n new_environment -f requirements.txt
 
 ## Running the code
 To run experiments, first preprocess the data: </br>
-preprocess_cmv.py trainfile testfile --save_metadata metadata_file --indices indices_file
+preprocess_cmv.py trainfile testfile --embeddings embeddings_file
 
 Then you can run experiments with linear models: </br>
-cmv_predict.py metadata_file
+train_cmv_lr.py metadata_file
 
 Or you can run experiments with the RNN:  </br>
-cmv_predict_rnn.py indices_file output_file
+cmv_predict_rnn.py metadata_file output_file
