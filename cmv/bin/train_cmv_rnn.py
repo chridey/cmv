@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import os
 import argparse
 import json
 import time
@@ -8,16 +9,12 @@ import collections
 import numpy as np
 from sklearn.metrics import precision_recall_fscore_support, roc_auc_score
 
-from cmv.rnn.persuasiveInfluenceClassifier import PersuasiveInfluenceClassifier
+from cmv.rnn.persuasiveInfluenceClassifier import PersuasiveInfluenceClassifier, load
 from cmv.rnn.vocab import build_vocab
+import cmv.rnn.utils as ut
 
-def build_data(metadata, vocab, lower, 
-               max_post_length, max_sentence_length, max_title_length,
-               frames=False, discourse=False, words=True):
-    print(max_post_length, max_sentence_length, max_title_length)
-    
-    data = collections.defaultdict(list)    
-    new_metadata = collections.defaultdict(list)
+def combine_data(metadata):
+    new_metadata = collections.defaultdict(lambda: collections.defaultdict(list))
     for split in ('train', 'val', 'test'):
         if split not in metadata:
             print('WARNING: {} not in metadata'.format(split))
@@ -34,79 +31,62 @@ def build_data(metadata, vocab, lower,
                 else:
                     op = []
                     title = []
-                new_metadata[split+'_op'].append(op)
-                new_metadata[split+'_titles'].append(title)
-                new_metadata[split+'_rr'].append(post)
-                data[split+'_labels'].append(name=='pos')
+                new_metadata[split]['op'].append(op)
+                new_metadata[split]['titles'].append(title)
+                new_metadata[split]['rr'].append(post)
+                new_metadata[split]['labels'].append(name=='pos')
                 
-    for split in ('train', 'val'):
-        for name in ('op', 'rr', 'titles'):
-            key = split+'_'+name
-            idxs, mask, mask_s = prepare_data(new_metadata[key], vocab, lower,
-                                              max_post_length, max_sentence_length,
-                                              frames=frames, discourse=discourse, words=words)
-            data[key] = idxs
-            data[split+'_mask_'+name+'_w'] = mask
-            data[split+'_mask_'+name+'_s'] = mask_s
-            print(name, data[key].shape, data[split+'_mask_'+name+'_w'].shape, data[split+'_mask_'+name+'_s'].shape)
+    return new_metadata
 
-    data['embeddings'] = prepare_embeddings(metadata['embeddings'], vocab)
-                
-    return data
+def prepare(data, vocab, biases, args):
 
-def prepare(data, vocab, frames, discourse, biases,
-            max_post_length, max_sentence_length, max_title_length,
-            min_count, lower, words=True, op=False):
-
+    embeddings = ut.prepare_embeddings(data['embeddings'], vocab)    
+    data = combine_data(data)
+    
     print('building data...')
-    data = build_data(data, vocab, lower, 
-                      max_post_length, max_sentence_length, max_title_length,
-                      frames, discourse, words)
-
-    kwargs = dict(V=data['embeddings'].shape[0],
-                  d=data['embeddings'].shape[1],
-                  max_post_length=max_post_length,
-                  max_sentence_length=max_sentence_length,
-                  max_title_length=max_title_length,
-                  embeddings=data['embeddings'],
-                  op=op)
+    inputs = collections.defaultdict(list)
+    for split in data:
+        for name in ('rr', 'op'):
+            if name == 'op' and not args.op:
+                continue
+            inputs[split].extend(ut.prepare_data(data[split][name], vocab, args.lower,
+                                                args.max_post_length, args.max_sentence_length,
+                                                frames=args.frames, discourse=args.discourse, words=args.words))
     
-    training_inputs = [data['train_rr'], data['train_mask_rr_w'], data['train_mask_rr_s']]
-    val_inputs = [data['val_rr'], data['val_mask_rr_w'], data['val_mask_rr_s']]
-
-    print(data['train_rr'].shape, data['train_mask_rr_w'].shape, data['train_mask_rr_s'].shape)
-    print(data['val_rr'].shape, data['val_mask_rr_w'].shape, data['val_mask_rr_s'].shape)
-    print(data['embeddings'].shape)
-    t_sum = data['train_mask_rr_s'].sum(axis=1)
-    print(t_sum.shape)
-    print(np.argwhere(t_sum==0))
-
-    v_sum = data['val_mask_rr_s'].sum(axis=1)
-    print(v_sum.shape)
-    print(np.argwhere(v_sum==0))
-    
-    if op: #CHANGE#
-        training_inputs += [data['train_op'], data['train_mask_op_w'], data['train_mask_op_s']]
-        val_inputs += [data['val_op'], data['val_mask_op_w'], data['val_mask_op_s']]
-
-    #if title (TODO)
-    #training_inputs += [data['train_titles'][:,0,:], data['train_mask_titles_w'][:,0,:]]
-    #val_inputs += [data['val_titles'][:,0,:], data['val_mask_titles_w'][:,0,:]]
+    rnn_params = dict(V=embeddings.shape[0],
+                    d=embeddings.shape[1],
+                    max_post_length=args.max_post_length,
+                    max_sentence_length=args.max_sentence_length,
+                    embeddings=embeddings,
+                    num_layers=args.num_layers,
+                    learning_rate=args.learning_rate,
+                    op=args.op,
+                    word_attn=args.word_attn,
+                    sent_attn=args.sent_attn,
+                    highway=args.highway,
+                    hops=args.hops)
+            
+    kwargs = dict(vocab=vocab,
+                  rnn_params=rnn_params,
+                  batch_size=args.batch_size,
+                  num_epochs=args.num_epochs,
+                  lambda_w=args.lambda_w,
+                  word_dropout=args.word_dropout,
+                  dropout=args.dropout,
+                  early_stopping_heldout=args.early_stopping_heldout,
+                  balance=args.balance,
+                  pairwise=args.pairwise,
+                  verbose=args.verbose)                  
     
     if biases:
-        training_inputs += [np.array(biases[0]).reshape(len(biases[0]),1)]
-        val_inputs += [np.array(biases[1]).reshape(len(biases[1]),1)]
-        kwargs.update(dict(add_biases=True))
+        for split in inputs:
+            inputs[split].append(np.array(biases[split]).reshape(len(biases[split]),1))
+        kwargs['rnn_params'].update(add_biases=True)
 
-    training_inputs.append(data['train_labels'])
-    val_inputs.append(data['val_labels'])
-        
-    #training = np.array(zip(*training_inputs))
-    #validation = np.array(zip(*val_inputs))
-    training = training_inputs
-    validation = val_inputs
+    for split in inputs:
+        inputs[split].append(data[split]['labels'])
     
-    return training, data['train_labels'], validation, data['val_labels'], kwargs
+    return inputs, kwargs
 
 if __name__ == '__main__':
 
@@ -119,19 +99,18 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=100)
 
     parser.add_argument('--lambda_w')
-    parser.add_argument('-n', '--num_layers')
+    parser.add_argument('-n', '--num_layers', type=int, default=2)
     parser.add_argument('-l', '--learning_rate')
     parser.add_argument('--word_dropout')
     parser.add_argument('--dropout')
     
-    parser.add_argument('--discourse', default=0)
+    parser.add_argument('--discourse', type=int, default=0)
     parser.add_argument('--frames', type=int, default=0)
     parser.add_argument('--words', type=int, default=1)
     parser.add_argument('--biases', type=open)
 
     parser.add_argument('--max_post_length', type=int, default=40)
     parser.add_argument('--max_sentence_length', type=int, default=256)
-    parser.add_argument('--max_title_length', type=int, default=256)    
 
     parser.add_argument('--min_count', type=int, default=5)
     parser.add_argument('--lower', action='store_true')
@@ -144,9 +123,16 @@ if __name__ == '__main__':
 
     parser.add_argument('--op', action='store_true')
     parser.add_argument('--hops', type=int, default=3)
+    parser.add_argument('--word_attn', type=int, default=1)
+    parser.add_argument('--sent_attn', type=int, default=1)
+    parser.add_argument('--highway', action='store_true')
     parser.add_argument('--pairwise', action='store_true')
 
     parser.add_argument('--vocab')
+
+    parser.add_argument('--save_gold', action='store_true')
+    parser.add_argument('--save_scores', action='store_true')
+    parser.add_argument('--load', action='store_true')
     
     args = parser.parse_args()
     print(args)
@@ -171,67 +157,62 @@ if __name__ == '__main__':
             with open(args.vocab, 'w') as f:
                 json.dump(vocab, f)
 
-    training, y, validation, val_y, kwargs = prepare(data, vocab, args.frames, args.discourse, biases,
-                                                     args.max_post_length, args.max_sentence_length,
-                                                     args.max_title_length, args.min_count, args.lower, args.words, args.op)
-    
-    kwargs.update(dict(batch_size=args.batch_size,
-                       num_epochs=args.num_epochs,
-                       verbose=args.verbose,
-                       early_stopping_heldout=args.early_stopping_heldout,
-                       balance=args.balance,
-                       hops=args.hops,
-                       pairwise=args.pairwise))
+    inputs, kwargs = prepare(data, vocab, biases, args)
                        
-    #also tune:
-    # learning rate (0.05, 0.01)
-    # recurrent dimension (50, 100, 200, 300)
-    # embedding dimension (50, 100, 200, 300)
-    # layers (1,2)
-
     lambda_ws = [0, .0000001, .000001, .00001, .0001]
     if args.lambda_w:
-        lambda_ws = map(float(args.lambda_w.split(','))) #[args.lambda_w] #TODO: args.lambda_w.split
-    
-    num_layerses = [2,1]
-    if args.num_layers:
-        num_layerses = map(int(args.num_layers.split(','))) #[args.num_layers]
+        lambda_ws = map(float,args.lambda_w.split(',')) 
     
     learning_rates = [0.05, 0.01]
     if args.learning_rate:
-        learning_rates = map(float(args.learning_rate.split(','))) #[args.learning_rate]
+        learning_rates = map(float,args.learning_rate.split(',')) 
 
     word_dropouts = [0.5, 0.25, 0, 0.75]
     if args.word_dropout:
-        word_dropouts = map(float(args.word_dropout.split(','))) #[args.word_dropout]
+        word_dropouts = map(float,args.word_dropout.split(',')) 
         
     dropouts = [0.25, 0, 0.5, 0.75]
     if args.dropout:
-        dropouts = map(float(args.dropout.split(','))) #[args.dropout]
+        dropouts = map(float,args.dropout.split(',')) 
 
-    #0 . 0.5 . 0 . 2 . 0.05
-        
     print('training...')
-    np.save('{}.gold'.format(args.outputfile), val_y)
+    if args.save_gold:
+        np.save('{}.gold'.format(args.outputfile), val_y)
+
+    training = inputs['train'][:-1]
+    train_y = inputs['train'][-1]
+    validation = inputs['val'][:-1]
+    val_y = inputs['val'][-1]
+        
+    best = 0
+            
+    if args.load:
+        classifier = load(args.outputfile, verbose=args.verbose)
+        best = classifier.get_score(validation, val_y)
+        if args.save_scores:
+            scores = classifier.decision_function(validation)
+            np.save('{}.scores'.format(args.outputfile), scores)
+
     for lambda_w in lambda_ws: 
-        for num_layers in num_layerses:
-                for learning_rate in learning_rates:
-                    for word_dropout in word_dropouts:
-                        for dropout in dropouts:
-                            outputfile = '{}.{}.{}.{}.{}.{}'.format(args.outputfile,
-                                                                        lambda_w,
-                                                                        word_dropout,
-                                                                        dropout,
-                                                                        num_layers,
-                                                                        learning_rate)
-                            kwargs.update(dict(lambda_w=lambda_w,
-                                               num_layers=num_layers,
-                                               learning_rate=learning_rate,
-                                               word_dropout=word_dropout,
-                                               dropout=dropout,
-                                               outputfile=outputfile))
-                            classifier = PersuasiveInfluenceClassifier(**kwargs)
-                            classifier.fit(training, y, validation, val_y)
-                            classifier.save(outputfile)
-                            scores = classifier.decision_function(validation[:-1])
-                            np.save('{}.scores'.format(outputfile), scores)
+        for learning_rate in learning_rates:
+            for word_dropout in word_dropouts:
+                for dropout in dropouts:
+                    kwargs['rnn_params']['learning_rate'] = learning_rate
+                    kwargs.update(dict(lambda_w=lambda_w,
+                                       word_dropout=word_dropout,
+                                       dropout=dropout))
+
+                    classifier = PersuasiveInfluenceClassifier(**kwargs)
+                    classifier.fit(training, train_y, validation, val_y)
+
+                    score = classifier.get_score(validation, val_y)
+
+                    if score > best:
+                        best = score
+                        classifier.save(args.outputfile)
+                        if args.save_scores:
+                            scores = classifier.decision_function(validation)
+                            np.save('{}.scores'.format(args.outputfile), scores)
+    
+    if 'test' in data:
+        score = classifier.get_score(inputs['test'][:-1], inputs['test'][-1])

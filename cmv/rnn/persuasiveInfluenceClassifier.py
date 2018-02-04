@@ -1,4 +1,5 @@
 import collections
+import json
 
 import numpy as np
 from sklearn.base import BaseEstimator
@@ -6,47 +7,25 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score, accuracy_score, precision_recall_fscore_support
 from sklearn.model_selection import StratifiedKFold
 
-from cmv.rnn.persuasiveInfluenceRNN import PersuasiveInfluenceRNN
+from cmv.rnn.persuasiveInfluenceRNN import PersuasiveInfluenceRNN, load as rnn_load
 
 class PersuasiveInfluenceClassifier(BaseEstimator):
-    def __init__(self, V, d, max_post_length, max_sentence_length,
-                 max_title_length=256,
-                 embeddings=None,
-                 GRAD_CLIP=100,
-                 freeze_words=False,
-                 num_layers=1,
-                 learning_rate=0.01,
-                 add_biases=False,
+    def __init__(self,
+                 vocab,
+                 rnn_params,
+                 batch_size=100,
+                 num_epochs=30,                 
+                 lambda_w=0,                 
                  word_dropout=0,
                  dropout=0,
-                 batch_size=100,
-                 num_epochs=30,
-                 verbose=False,
-                 lambda_w=0,
                  early_stopping_heldout=0,
                  balance=False,
-                 op=False,
-                 hops=3,
-                 outputfile='',
-                 pairwise=False):
+                 pairwise=False,
+                 verbose=False):
 
-        print('outputfile', outputfile)
+        self.vocab = vocab
         
-        self.V = V
-        self.d = d
-        self.max_post_length = max_post_length
-        self.max_sentence_length = max_sentence_length
-        self.max_title_length = max_title_length
-        self.embeddings = embeddings
-        self.GRAD_CLIP = GRAD_CLIP
-        self.freeze_words = freeze_words
-        self.num_layers = num_layers
-        self.learning_rate = learning_rate
-        self.add_biases=False
-
-        self.classifier = PersuasiveInfluenceRNN(V, d, max_post_length, max_sentence_length, max_title_length,
-                                                 embeddings, GRAD_CLIP, freeze_words, num_layers, learning_rate,
-                                                 add_biases, hops=hops, op=op)
+        self.model = PersuasiveInfluenceRNN(**rnn_params)
 
         self.batch_size = batch_size
         self.num_epochs = num_epochs
@@ -55,15 +34,14 @@ class PersuasiveInfluenceClassifier(BaseEstimator):
         self.word_dropout = word_dropout
         self.dropout = dropout
         
-        self.verbose = verbose
         self.early_stopping_heldout = early_stopping_heldout
         self.balance = balance
-        self.outputfile = outputfile
         self.pairwise = pairwise
-        
+        self.verbose = verbose
+                
     def fit(self, X, y, X_heldout, y_heldout):
         if self.verbose:
-            print(self.dropout, self.lambda_w, self.num_layers, self.word_dropout)
+            print(self.dropout, self.lambda_w, self.word_dropout)
             print(collections.Counter(y))
 
         if self.early_stopping_heldout:
@@ -73,11 +51,7 @@ class PersuasiveInfluenceClassifier(BaseEstimator):
                                                           )
             print('Train Fold: {} Heldout: {}'.format(collections.Counter(y), collections.Counter(y_heldout)))
 
-        #data = X zip(*X)
-        #X = np.array(data[0])
-        #num_batches = X.shape[0] // self.batch_size
         best = 0
-        #training = np.array(zip(*data))
         num_batches = X[0].shape[0] // self.batch_size
         skf = StratifiedKFold(n_splits=num_batches+1, shuffle=True)
         folds = list(skf.split(X[0], y))
@@ -85,27 +59,15 @@ class PersuasiveInfluenceClassifier(BaseEstimator):
         for epoch in range(self.num_epochs):
             epoch_cost = 0
 
-            #idxs = np.random.choice(X.shape[0], X.shape[0], False)
-            #idxs = np.random.choice(X[0].shape[0], X[0].shape[0], False)
-            #TODO: do stratified selection?            
-            
-            #if self.verbose:
-            #    print('Unique', len(set(idxs)))
-                
             for batch_num in range(num_batches+1):
-                #s = self.batch_size * batch_num
-                #e = self.batch_size * (batch_num+1)
                 fold = folds[batch_num][1]
                 
                 inputs = []
                 for input in X:
-                    #tmp = [input[idxs[i]] for i in range(s,min(e,X[0].shape[0]))]
                     tmp = [input[fold[i]] for i in range(fold.shape[0])]
                     inputs.append(np.array(tmp))
-                    #print(inputs[-1].shape)
-                    
-                #batch = training[idxs[s:e]]
-                #inputs = zip(*batch)
+
+                inputs.append(np.array(y)[fold])
 
                 if self.verbose:
                     print('Y Batch:', collections.Counter(inputs[-1]))
@@ -123,36 +85,23 @@ class PersuasiveInfluenceClassifier(BaseEstimator):
                         print(label_counts, class_weights)
                     weights = np.array([class_weights[i] for i in inputs[-1]]).astype(np.float32)
 
-                #print([i.shape for i in inputs])
-                cost = self.classifier.train(*(inputs+[self.lambda_w, self.dropout, weights]))
+                cost = self.model.train(*(inputs+[self.lambda_w, self.dropout, weights]))
                 if self.verbose:
                     print(epoch, batch_num, cost)
                 epoch_cost += cost
 
             if self.early_stopping_heldout or (X_heldout is not None and y_heldout is not None):
-                scores = self.decision_function(X_heldout[:-1]) #zip(zip(*X_heldout)[:-1]))
-                #print(scores.shape, np.array(X_heldout[-1]).shape)
-                score = roc_auc_score(X_heldout[-1], scores)  #zip(*X_heldout)[:-1], scores)
-                if self.pairwise:
-                    neg_scores = scores[scores.shape[0]//2:]
-                    pos_scores = scores[:scores.shape[0]//2]
-                    score = np.mean(pos_scores > neg_scores)
-                if self.verbose:
-                    print('{} ROC AUC: {}'.format(self.outputfile, score))
-                    print('{} Accuracy: {}'.format(self.outputfile, accuracy_score(X_heldout[-1], scores > .5)))
-                    print('{} Fscore: {}'.format(self.outputfile, precision_recall_fscore_support(X_heldout[-1], scores > .5)))
-                    if self.pairwise:
-                        print('{} Pairwise: {}'.format(self.outputfile, score))
-                        
+                score = self.get_score(X_heldout, y_heldout)
+                
                 if score > best:
                     best = score
-                    best_params = self.classifier.get_params()
+                    best_params = self.model.get_params()
 
             if self.verbose:
                 print(epoch_cost)
 
         if best > 0:
-            self.classifier.set_params(best_params)
+            self.model.set_params(best_params)
 
         return self
     
@@ -171,9 +120,69 @@ class PersuasiveInfluenceClassifier(BaseEstimator):
                 e = (batch_num+1)*self.batch_size
                 tmp = [input[i] for i in range(s,min(e,X[0].shape[0]))]
                 inputs.append(np.array(tmp))
-            scores.extend(list(self.classifier.predict(*inputs)))
+            scores.extend(list(self.model.predict(*inputs)))
         
         return np.array(scores)
 
+    def get_score(self, X, y):
+        scores = self.decision_function(X)
+        score = roc_auc_score(y, scores)
+        
+        if self.verbose:
+            print('{} ROC AUC: {}'.format(self.pretty_params, score))
+            print('{} Accuracy: {}'.format(self.pretty_params, accuracy_score(y, scores > .5)))
+            print('{} Fscore: {}'.format(self.pretty_params, precision_recall_fscore_support(y, scores > .5)))
+
+        if self.pairwise:
+            neg_scores = scores[scores.shape[0]//2:]
+            pos_scores = scores[:scores.shape[0]//2]
+            score = np.mean(pos_scores > neg_scores)
+            
+            if self.verbose:
+                print('{} Pairwise: {}'.format(self.pretty_params, score))
+                
+        return score
+
+    @property
+    def params(self):
+        return dict(lambda_w=self.lambda_w,
+                    word_dropout=self.word_dropout,
+                    dropout=self.word_dropout,
+                    rnn_params=self.model.hyper_params)
+
+    @property
+    def pretty_params(self):
+        ret = []
+        for key,value in self.params.items():
+            if key == 'rnn_params':
+                for key,value in self.params[key].items():
+                    ret.append('{}={}'.format(key, value))
+            else:
+                ret.append('{}={}'.format(key, value))
+        return '_'.join(ret)
+    
     def save(self, outfilename):
-        self.classifier.save(outfilename)
+        
+        with open(outfilename + '.vocab', 'w') as f:
+            json.dump(self.vocab, f)
+
+        with open(outfilename + '.params', 'w') as f:
+            json.dump(self.params, f)
+            
+        self.model.save(outfilename +'.model')
+        
+def load(filename, verbose=False):
+    
+    with open(filename + '.vocab') as f:
+        vocab = json.load(f)
+    
+    with open(filename + '.params') as f:
+        params = json.load(f)
+
+    params['vocab'] = vocab
+    params['verbose'] = verbose
+    classifier = PersuasiveInfluenceClassifier(**params)
+
+    rnn_load(classifier.model, filename + '.model.npz')
+
+    return classifier
