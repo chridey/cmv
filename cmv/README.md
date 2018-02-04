@@ -2,7 +2,7 @@ Code for training models on social media for influence prediction
 
 ## Dependencies:
 ### python
-We recommend using conda with the included requirements.txt file:
+We recommend using conda with the included requirements.txt file: </br>
 conda create -n new_environment -f requirements.txt
 
 ### other (optional)
