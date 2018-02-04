@@ -113,7 +113,11 @@ if __name__ == '__main__':
             
     if args.biases_file:
         with open(args.biases_file, 'w') as f:
-            json.dump([lr.decision_function(X).tolist(), lr.decision_function(X_val).tolist()], f)
+            output = dict(train=lr.decision_function(X).tolist(),
+                          val=lr.decision_function(X_val).tolist())
+            if 'test' in data:
+                output.update(test=lr.decision_function(featureLabels['test'][keys]).tolist())
+            json.dump(output, f)
 
     if args.predictions_file:        
         np.save(args.predictions_file, lr.predict(X_val))            
