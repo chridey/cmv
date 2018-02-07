@@ -45,11 +45,10 @@ def build_vocab(metadata, min_count, lower):
 
                 if 'inter_discourse' in sentence:
                     discourse = sentence['inter_discourse']
-                    if discourse is None:
-                        continue
-                    feature = 'DISCOURSE_' + discourse
-                    if feature not in vocab:
-                        vocab[feature] = len(vocab)
+                    if discourse is not None:
+                        feature = 'DISCOURSE_' + discourse
+                        if feature not in vocab:
+                            vocab[feature] = len(vocab)
                     
     print('vocab size is {}'.format(len(vocab)))
     return vocab

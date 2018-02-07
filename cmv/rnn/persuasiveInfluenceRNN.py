@@ -22,7 +22,10 @@ class PersuasiveInfluenceRNN:
                  word_attn=True,
                  sent_attn=True,
                  highway=False,
-                 hops=3):
+                 hops=3,
+                 words=True,
+                 frames=False,
+                 discourse=False):
 
         self._hyper_params = dict(V=V, d=d, max_post_length=max_post_length,
                                   max_sentence_length=max_sentence_length,
@@ -50,10 +53,6 @@ class PersuasiveInfluenceRNN:
 
         biases = T.matrix('biases')
         weights = T.ivector('weights')
-
-        inputs = [idxs_rr, mask_rr_w, mask_rr_s] #CHANGE# ,
-        if op:
-            inputs.extend([idxs_op, mask_op_w, mask_op_s])
         
         #now use this as an input to an LSTM
         l_idxs_rr = lasagne.layers.InputLayer(shape=(None, max_post_length, max_sentence_length),
@@ -78,42 +77,98 @@ class PersuasiveInfluenceRNN:
                                                     W=lasagne.utils.floatX(embeddings))
         else:
             l_emb_rr_w = lasagne.layers.EmbeddingLayer(l_idxs_rr, V, d)
-            
+                        
         #now B x S x D
-        if word_attn:
-            l_attn_rr_w = AttentionWordLayer([l_emb_rr_w, l_mask_rr_w], d)
-            l_avg_rr_s = WeightedAverageWordLayer([l_emb_rr_w, l_attn_rr_w])
+        if words:
+            if word_attn:
+                l_attn_rr_w = AttentionWordLayer([l_emb_rr_w, l_mask_rr_w], d)
+                l_avg_rr_s = WeightedAverageWordLayer([l_emb_rr_w, l_attn_rr_w])
+            else:
+                l_avg_rr_s = AverageWordLayer([l_emb_rr_w, l_mask_rr_w])
+            concats = [l_avg_rr_s]
+            inputs = [idxs_rr, mask_rr_w, mask_rr_s]        
         else:
-            l_avg_rr_s = AverageWordLayer([l_emb_rr_w, l_mask_rr_w])
+            concats = []
+            inputs = [mask_rr_w, mask_rr_s]
             
+        if frames:
+            idxs_frames_rr = T.itensor3('idxs_frames_rr')
+            inputs.append(idxs_frames_rr)            
+            l_idxs_frames_rr = lasagne.layers.InputLayer(shape=(None, max_post_length, max_sentence_length),
+                                                         input_var=idxs_frames_rr)
+            l_emb_frames_rr_w = lasagne.layers.EmbeddingLayer(l_idxs_frames_rr, V, d,
+                                                              W=l_emb_rr_w.W)
+            if word_attn:
+                l_attn_rr_frames = AttentionWordLayer([l_emb_frames_rr_w, l_mask_rr_w], d)
+                l_avg_rr_s_frames = WeightedAverageWordLayer([l_emb_frames_rr_w, l_attn_rr_frames])
+            else:
+                l_avg_rr_s_frames = AverageWordLayer([l_emb_frames_rr_w, l_mask_rr_w])
+            concats.append(l_avg_rr_s_frames)
+
+        if discourse:
+            idxs_disc_rr = T.imatrix('idxs_disc_rr')
+            inputs.append(idxs_disc_rr)
+            l_emb_disc_rr = lasagne.layers.EmbeddingLayer(l_idxs_disc_rr, V, d,
+                                                          W=l_emb_rr_w.W)
+            concats.append(l_emb_disc_rr)
+            
+        l_avg_rr_s = lasagne.layers.ConcatLayer(concats, axis=-1)
+                
         if highway:
             l_avg_rr_s = HighwayLayer(l_avg_rr_s, num_units=l_avg_rr_s.output_shape[-1],
                                     nonlinearity=lasagne.nonlinearities.rectify,
                                     num_leading_axes=2)
                
-        #separate embeddings for now (TODO)
-
+        #separate embeddings for OP
         if embeddings is not None:
             l_emb_op_w = lasagne.layers.EmbeddingLayer(l_idxs_op, V, d,
                                                     W=lasagne.utils.floatX(embeddings))
         else:
             l_emb_op_w = lasagne.layers.EmbeddingLayer(l_idxs_op, V, d)
-            
-        l_attn_op_w = AttentionWordLayer([l_emb_op_w, l_mask_op_w], d)
-        l_avg_op_s = WeightedAverageWordLayer([l_emb_op_w, l_attn_op_w])
-        #bidirectional LSTM
-        l_lstm_op_s_fwd = lasagne.layers.LSTMLayer(l_avg_op_s, rd,
-                                                   nonlinearity=lasagne.nonlinearities.tanh,
-                                                   grad_clipping=GRAD_CLIP,
-                                                   mask_input=l_mask_op_s)
-        l_lstm_op_s_rev = lasagne.layers.LSTMLayer(l_avg_op_s, rd,
-                                                   nonlinearity=lasagne.nonlinearities.tanh,
-                                                   grad_clipping=GRAD_CLIP,
-                                                   mask_input=l_mask_op_s,
-                                                   backwards=True)
-        l_avg_op_s = lasagne.layers.ConcatLayer([l_lstm_op_s_fwd, l_lstm_op_s_rev], axis=-1)
-        l_attn_op_s = AttentionSentenceLayer([l_avg_op_s, l_mask_op_s], d)
-        l_op_avg = WeightedAverageSentenceLayer([l_avg_op_s, l_attn_op_s])
+
+        if op:
+            if words:            
+                l_attn_op_w = AttentionWordLayer([l_emb_op_w, l_mask_op_w], d)
+                l_avg_op_s = WeightedAverageWordLayer([l_emb_op_w, l_attn_op_w])
+                concats = [l_avg_op_s]
+                inputs.extend([idxs_op, mask_op_w, mask_op_s])
+            else:
+                concats = []
+                inputs.extend([mask_op_w, mask_op_s])
+                
+            if frames:
+                idxs_frames_op = T.itensor3('idxs_frames_op')
+                inputs.append(idxs_frames_op)            
+                l_idxs_frames_op = lasagne.layers.InputLayer(shape=(None, max_post_length, max_sentence_length),
+                                                             input_var=idxs_frames_op)
+                l_emb_frames_op_w = lasagne.layers.EmbeddingLayer(l_idxs_frames_op, V, d,
+                                                                  W=l_emb_op_w.W)
+                l_attn_op_frames = AttentionWordLayer([l_emb_frames_op_w, l_mask_op_w], d)
+                l_avg_op_s_frames = WeightedAverageWordLayer([l_emb_frames_op_w, l_attn_op_frames])
+                concats.append(l_avg_op_s_frames)
+
+            if discourse:
+                idxs_disc_op = T.imatrix('idxs_disc_op')
+                inputs.append(idxs_disc_op)
+                l_emb_disc_op = lasagne.layers.EmbeddingLayer(l_idxs_disc_op, V, d,
+                                                              W=l_emb_op_w.W)
+                concats.append(l_emb_disc_op)
+
+            l_avg_op_s = lasagne.layers.ConcatLayer(concats, axis=-1)
+
+            #bidirectional LSTM
+            l_lstm_op_s_fwd = lasagne.layers.LSTMLayer(l_avg_op_s, rd,
+                                                       nonlinearity=lasagne.nonlinearities.tanh,
+                                                       grad_clipping=GRAD_CLIP,
+                                                       mask_input=l_mask_op_s)
+            l_lstm_op_s_rev = lasagne.layers.LSTMLayer(l_avg_op_s, rd,
+                                                       nonlinearity=lasagne.nonlinearities.tanh,
+                                                       grad_clipping=GRAD_CLIP,
+                                                       mask_input=l_mask_op_s,
+                                                       backwards=True)
+            l_avg_op_s = lasagne.layers.ConcatLayer([l_lstm_op_s_fwd, l_lstm_op_s_rev], axis=-1)
+            l_attn_op_s = AttentionSentenceLayer([l_avg_op_s, l_mask_op_s], d)
+            l_op_avg = WeightedAverageSentenceLayer([l_avg_op_s, l_attn_op_s])
         
         #bidirectional LSTM
         l_lstm_rr_s_fwd = lasagne.layers.LSTMLayer(l_avg_rr_s, rd,

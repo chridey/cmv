@@ -64,7 +64,10 @@ def prepare(data, vocab, biases, args):
                     word_attn=args.word_attn,
                     sent_attn=args.sent_attn,
                     highway=args.highway,
-                    hops=args.hops)
+                    hops=args.hops,
+                    words=args.words,
+                    frames=args.frames,
+                    discourse=args.discourse)
             
     kwargs = dict(vocab=vocab,
                   rnn_params=rnn_params,
