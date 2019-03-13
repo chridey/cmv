@@ -67,7 +67,8 @@ def prepare(data, vocab, biases, args):
                     hops=args.hops,
                     words=args.words,
                     frames=args.frames,
-                    discourse=args.discourse)
+                    discourse=args.discourse,
+                    GRAD_CLIP=args.grad_clip)
             
     kwargs = dict(vocab=vocab,
                   rnn_params=rnn_params,
@@ -106,6 +107,7 @@ if __name__ == '__main__':
     parser.add_argument('-l', '--learning_rate')
     parser.add_argument('--word_dropout')
     parser.add_argument('--dropout')
+    parser.add_argument('--grad_clip', type=float)
     
     parser.add_argument('--discourse', type=int, default=0)
     parser.add_argument('--frames', type=int, default=0)
