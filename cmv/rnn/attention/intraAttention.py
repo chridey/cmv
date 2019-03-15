@@ -69,9 +69,7 @@ class PoolingEncoder(Seq2VecEncoder):
         
     def forward(self,
                 embedded_input,
-                input_mask,
-                other_input=None,
-                other_mask=None):
+                input_mask):
 
         #assumes input is batch_size * num_words * embedding_dim
         
@@ -108,9 +106,7 @@ class QueryAttentionEncoder(Seq2VecEncoder):
 
     def forward(self,
                 embedded_input,
-                input_mask,
-                other_input=None,
-                other_mask=None):
+                input_mask):
                 
         #get weighted average of words in sentence
         attention = self._query_attention(embedded_input, input_mask)

@@ -13,31 +13,58 @@ from allennlp.modules.matrix_attention.legacy_matrix_attention import LegacyMatr
 
 from allennlp.nn.util import weighted_sum, masked_softmax, replace_masked_values
 
-from . import IntraAttention
+from . import IntraAttention, PoolingEncoder
 
 class InterAttentionEncoder(Seq2VecEncoder):
-    def forward(source, response, source_mask, response_mask, source_attention=None):
+    def forward(response, response_mask, source, source_mask):
         raise NotImplementedError
 
+    '''
     @classmethod
     def from_params(cls, params: Params) -> 'InterAttentionEncoder':
         attention_type = params.pop('type')
         return type_lookup[attention_type].from_params(params=params)
+    '''
     
+@Seq2VecEncoder.register("combined_pooling_encoder")
+class CombinedPoolingEncoder(InterAttentionEncoder):
+    def __init__(self,
+                 source_pooling_encoder: PoolingEncoder,
+                 response_pooling_encoder: PoolingEncoder,
+                 combine_feedforward: Optional[FeedForward] = None):
+
+        super().__init__()
+        
+        self._source_pooling_encoder = source_pooling_encoder
+        self._response_pooling_encoder = response_pooling_encoder
+        self._combine_feedforward = combine_feedforward
+
+    def forward(self, response, response_mask, source, source_mask):
+        pooled_response = self._response_pooling_encoder(response, response_mask)
+        pooled_source = self._source_pooling_encoder(source, source_mask)
+
+        combined = torch.cat([pooled_response, pooled_source], dim=-1)
+        if self._combine_feedforward is not None:
+            combined = self._combine_feedforward(combined)
+        return combined
+        
 @Seq2VecEncoder.register("memory_attention")
 class MemoryAttention(InterAttentionEncoder):
     def __init__(self, attention: IntraAttention,
-                 memory_feedforward: FeedForward,
-                 input_dim: int, n_hops: int = 3):
+                 source_encoder: Seq2VecEncoder,
+                 #input_dim: int,
+                 memory_feedforward: Optional[FeedForward] = None,                 
+                 n_hops: int = 3):
         
         super().__init__()
         self.n_hops = n_hops
-        self.query = torch.nn.Parameter(torch.Tensor(input_dim))
+        #self.query = torch.nn.Parameter(torch.Tensor(input_dim))
         #TODO: separate query for each hop?
         self._attention = attention
+        self._source_encoder = source_encoder
         self._memory_feedforward = memory_feedforward
         
-    def forward(self, source, response, source_mask, response_mask, source_attention=None):
+    def forward(self, response, response_mask, source, source_mask):
         #source is batch_size x n_sentences x n_dim
         #response is batch_size x n_sentences x n_dim
         #masks are batch_size x n_sentences
@@ -45,18 +72,11 @@ class MemoryAttention(InterAttentionEncoder):
         batch_size, n_sentences, n_dim = response.shape
         
         #source is now batch_size x n_dim -> b x n_sentences x n-dim
-        if source_attention is not None:
-            attention = source_attention(source, source_mask)
-            #print(source.shape, attention.shape)
-            source = weighted_sum(source, attention)
-            #print(source.shape)
-        else:
-            source_mask = source_mask.float()
-            source = torch.sum(source * source_mask.unsqueeze(-1), dim=1) / torch.sum(
-                                source_mask, 1, keepdim=True)                                     
+        source = self._source_encoder(source, source_mask)                                    
 
         #initialize memory with average of response sentences        
-        weighted_response = torch.sum(response * response_mask.float().unsqueeze(-1), dim=1) / torch.sum(response_mask.float(), 1, keepdim=True)                                     
+        weighted_response = torch.sum(response * response_mask.float().unsqueeze(-1),
+                                      dim=1) / torch.sum(response_mask.float(), 1, keepdim=True)
 
         #print(source.shape, response.shape, weighted_response.shape)
         for _ in range(self.n_hops):
@@ -66,59 +86,20 @@ class MemoryAttention(InterAttentionEncoder):
                                 dim=-1)
             
             response_attention = self._attention(memory, response_mask)
-            weighted_response = self._memory_feedforward(weighted_sum(memory, response_attention))
+            if self._memory_feedforward is None:
+                weighted_response = weighted_sum(response, response_attention)
+            else:
+                weighted_response = self._memory_feedforward(weighted_sum(memory, response_attention))
             
         return weighted_response
 
-    @classmethod
-    def from_params(cls, params: Params) -> 'MemoryAttention':
-        attention = IntraAttention.from_params(params.pop('attention'))
-        memory_feedforward = FeedForward.from_params(params.pop('memory_feedforward'))
-        n_hops = params.pop('n_hops', 3)
-        
-        return cls(attention, memory_feedforward, n_hops)
 
-@Model.register("conditional_seq2seq_encoder")
 class ConditionalSeq2SeqEncoder(Seq2SeqEncoder):
-    def __init__(self,
-                 similarity_function: SimilarityFunction,
-                 projection_feedforward: FeedForward,
-                 inference_encoder: Seq2SeqEncoder,
-                 input_feedforward: Optional[FeedForward] = None,                 
-                 source_input_feedforward: Optional[FeedForward] = None,
-                 source_projection_feedforward: Optional[FeedForward] = None,                 
-                 source_inference_encoder: Optional[Seq2SeqEncoder] = None,                 
-                 dropout: float = 0.5,
-                 #whether to only consider the response and alignments from the source to response
-                 response_only=False) -> None:
-        
-        super().__init__()
-
-        self._response_input_feedforward = response_input_feedforward
-        self._response_projection_feedforward = response_projection_feedforward
-        self._response_inference_encoder = response_inference_encoder
-
-        self._source_input_feedforward = source_input_feedforward or response_input_feedforward
-        self._source_projection_feedforward = source_projection_feedforward or response_projection_feedforward
-        self._source_inference_encoder = source_inference_encoder or response_inference_encoder
-
-        self._matrix_attention = LegacyMatrixAttention(similarity_function)
-        
-        if dropout:
-            self.dropout = torch.nn.Dropout(dropout)
-            self.rnn_input_dropout = InputVariationalDropout(dropout)
-        else:
-            self.dropout = None
-            self.rnn_input_dropout = None
-        
-    def forward(self,
-                encoded_source,
-                encoded_response):
-        pass         
+    pass
     
-@Seq2VecEncoder.register('esim_attention')
-class ESIMAttention(InterAttentionEncoder):
-    def __init__(self,
+@ConditionalSeq2SeqEncoder.register("esim_encoder")
+class ESIMEncoder(ConditionalSeq2SeqEncoder):
+    def __init__(self,    
                  similarity_function: SimilarityFunction,
                  response_projection_feedforward: FeedForward,
                  response_inference_encoder: Seq2SeqEncoder,
@@ -126,9 +107,7 @@ class ESIMAttention(InterAttentionEncoder):
                  source_input_feedforward: Optional[FeedForward] = None,
                  source_projection_feedforward: Optional[FeedForward] = None,                 
                  source_inference_encoder: Optional[Seq2SeqEncoder] = None,                 
-                 dropout: float = 0.5,
-                 #whether to only consider the response and alignments from the source to response
-                 response_only=False) -> None:
+                 dropout: float = 0.5) -> None:
         
         super().__init__()
 
@@ -143,19 +122,25 @@ class ESIMAttention(InterAttentionEncoder):
         self._matrix_attention = LegacyMatrixAttention(similarity_function)
         
         if dropout:
-            self.dropout = torch.nn.Dropout(dropout)
             self.rnn_input_dropout = InputVariationalDropout(dropout)
         else:
-            self.dropout = None
             self.rnn_input_dropout = None
 
-        self._response_only = response_only
-
-    #def forward(self, encoded_source, encoded_response,
-    #            source_mask, response_mask, source_attention=None):
     def forward(self, encoded_response, response_mask,
-                encoded_source, source_mask):
+                encoded_source, source_mask,
+                #whether to only consider the response and alignments from the source to response
+                response_only=False,
+                #whether to concatenate the inputs to the outputs
+                pass_input_through=False):
 
+        response_output = []
+        if pass_input_through:
+            response_output = [encoded_response]
+                    
+        source_output = []
+        if pass_input_through and not response_only:
+            source_output = [encoded_source]
+            
         if self._source_input_feedforward:
             encoded_source = self._source_input_feedforward(encoded_source)
         if self._response_input_feedforward:
@@ -185,18 +170,10 @@ class ESIMAttention(InterAttentionEncoder):
             projected_enhanced_response = self.rnn_input_dropout(projected_enhanced_response)
         v_bi = self._response_inference_encoder(projected_enhanced_response, response_mask)
 
-        # The pooling layer -- max and avg pooling.
-        # (batch_size, model_dim)
-        v_b_max, _ = replace_masked_values(
-            v_bi, response_mask.unsqueeze(-1), -1e7
-        ).max(dim=1)
+        response_output.append(v_bi)
+        response_output = torch.cat(response_output, dim=-1)
         
-        v_b_avg = torch.sum(v_bi * response_mask.float().unsqueeze(-1), dim=1) / torch.sum(
-            response_mask.float(), 1, keepdim=True
-        )
-
-        to_cat = [v_b_avg, v_b_max]        
-        if not self._response_only:
+        if not response_only:
             # Shape: (batch_size, source_length, response_length)
             p2h_attention = masked_softmax(similarity_matrix, response_mask)
             # Shape: (batch_size, source_length, embedding_dim)
@@ -218,58 +195,14 @@ class ESIMAttention(InterAttentionEncoder):
                 projected_enhanced_source = self.rnn_input_dropout(projected_enhanced_source)
 
             v_ai = self._source_inference_encoder(projected_enhanced_source, source_mask)
-            v_a_max, _ = replace_masked_values(
-                v_ai, source_mask.unsqueeze(-1), -1e7
-            ).max(dim=1)
-            v_a_avg = torch.sum(v_ai * source_mask.float().unsqueeze(-1), dim=1) / torch.sum(
-                source_mask.float(), 1, keepdim=True
-            )
-            to_cat = [v_a_avg, v_a_max] + to_cat
-      
-        # Now concat
-        # (batch_size, model_dim * 2 * 4)
-        v_all = torch.cat(to_cat, dim=1)    
 
-        #TODO
-        #instead of max and average pooling, take a memory network
-        #for OP, start with avg or max of OP and RR sentences
-        #for RR, start with mem of OP and avg or max of RR sentences
-        
-        return v_all
-
-    @classmethod
-    def from_params(cls, params: Params) -> 'ESIMAttention':
-
-        similarity_function = SimilarityFunction.from_params(params.pop("similarity_function"))
-        response_projection_feedforward = FeedForward.from_params(params.pop("response_projection_feedforward"))
-        response_inference_encoder = Seq2SeqEncoder.from_params(params.pop("response_inference_encoder"))
-               
-        source_projection_feedforward_params = params.pop("source_projection_feedforward", None)
-        source_projection_feedforward = None
-        if source_projection_feedforward_params is not None:
-            source_projection_feedforward = FeedForward.from_params(source_projection_feedforward_params)
-
-        response_input_feedforward_params = params.pop("response_input_feedforward", None)
-        response_input_feedforward = None
-        if response_input_feedforward_params is not None:
-            response_input_feedforward = FeedForward.from_params(response_input_feedforward_params)
-
-        source_input_feedforward_params = params.pop("source_input_feedforward", None)
-        source_input_feedforward = None
-        if source_input_feedforward_params is not None:
-            source_input_feedforward = FeedForward.from_params(source_input_feedforward_params)
-                        
-        source_inference_encoder_params = params.pop("source_inference_encoder", None)
-        if source_inference_encoder_params is not None:
-            source_inference_encoder = Seq2SeqEncoder.from_params(source_inference_encoder_params)
+            source_output.append(v_ai)
+            source_output = torch.cat(source_output, dim=-1)
         else:
-            source_inference_encoder = None
-                                                
-        dropout = params.pop("dropout", 0.5)
-        
-        return cls(similarity_function, response_projection_feedforward, response_inference_encoder,
-                   response_input_feedforward, source_input_feedforward,
-                   source_projection_feedforward, source_inference_encoder, dropout)
-            
+            source_output = None
+                          
+        return response_output, source_output
+
 type_lookup = dict(memory_attention=MemoryAttention,
-                   esim_attention=ESIMAttention)    
+                   combined_pooling_encoder=CombinedPoolingEncoder)    
+
