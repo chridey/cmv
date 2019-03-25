@@ -267,7 +267,7 @@ class PtrExtractSumm(Model):
         ptr_in = torch.gather(
             enc_out, dim=1, index=target.clamp(min=0).unsqueeze(2).expand(bs, nt, d)
         )
-        output = self._extractor(enc_out, sent_nums, ptr_in)
+        output = self._extractor(enc_out, ptr_in, sent_nums)
         return output
 
     def extract(self, enc_out, sent_nums=None, k=5, mask=None):
