@@ -274,6 +274,9 @@ class MemoryLayer(lasagne.layers.MergeLayer):
 
 
 class MyConcatLayer(lasagne.layers.MergeLayer):
+    '''
+    for concatenating a MxN tensor and an MxNxO tensor
+    '''
     def __init__(self, incomings, **kwargs):
         super(MyConcatLayer, self).__init__(incomings, **kwargs)  # MergeLayer constructor requires list of incoming layers
         

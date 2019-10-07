@@ -1,3 +1,5 @@
+import collections
+
 def build_vocab(metadata, min_count, lower):
     print('min count is {}'.format(min_count))
     
@@ -37,15 +39,17 @@ def build_vocab(metadata, min_count, lower):
                     for frame in sentence['frames']:
                         if frame is None:
                             continue
-                        if frame not in vocab:
-                            vocab['FRAME_' + frame] = len(vocab)
+                        feature = 'FRAME_' + frame
+                        if feature not in vocab:
+                            vocab[feature] = len(vocab)
 
                 if 'inter_discourse' in sentence:
                     discourse = sentence['inter_discourse']
                     if discourse is None:
                         continue
-                    if discourse not in vocab:
-                        vocab['DISCOURSE_' + discourse] = len(vocab)
+                    feature = 'DISCOURSE_' + discourse
+                    if feature not in vocab:
+                        vocab[feature] = len(vocab)
                     
     print('vocab size is {}'.format(len(vocab)))
     return vocab
