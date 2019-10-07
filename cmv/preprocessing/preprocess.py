@@ -7,6 +7,7 @@ Chenhao Tan
 adapted by Chris Hidey
 """
 
+import unicodedata
 import re
 
 MD_LINK = re.compile(r"\[(.*?)\]\((.+?)\)", re.DOTALL)
@@ -59,6 +60,82 @@ def is_edit_line(words):
         return True
     return False
 
+def get_quoted_text_and_responses(body):
+    quotes = []
+    responses = [] 
+    paragraphs = [i for i in body.splitlines() if len(i)]
+    for idx,line in enumerate(paragraphs):
+        words = re.findall("\w+", line.lower())
+        if is_edit_line(words):
+            continue
+        elif line.startswith("&gt;") and (idx==0 or not paragraphs[idx-1].startswith("&gt")):
+            i = idx + 1
+            while i < len(paragraphs) and (not len(paragraphs[i]) or paragraphs[i].startswith('&gt')):
+                i += 1
+            if i < len(paragraphs):
+                quotes.append(line.replace("&gt;", ""))
+                responses.append(paragraphs[i])
+            
+    return quotes, responses
+
+def get_quoted_text(body):
+    quotes = []
+    for line in body.splitlines():
+        words = re.findall("\w+", line.lower())
+        if is_edit_line(words):
+            continue
+        elif line.startswith("&gt;"):
+            quotes.append(line.replace("&gt;", ""))
+            
+    return quotes
+
+def get_aligned_quoted_text(quotes, op_sentences, op_title=''):
+    alignments = []
+    if not len(quotes):
+        return alignments
+
+    #print('TITLE', op_title)
+
+    if type(quotes[0]) == unicode:
+        quotes = {i.lower().strip().replace('*','') for i in quotes}
+    else:
+        quotes = {unicode(i, 'utf8', 'ignore').lower().strip().replace('*','') for i in quotes}
+    #print('QUOTES', '---'.join(quotes))
+    #print('ORIGINAL', '---'.join(op_sentences))
+    
+    for index, sentence in enumerate(op_sentences):
+        sentence = sentence.replace('*', '').lower()
+        if not len(sentence.strip()):
+            continue
+        
+        if type(sentence) != unicode:
+            sentence = unicode(sentence, 'utf8', 'ignore')
+                    
+        #first check if exact full match
+        if sentence in quotes:
+            alignments.append(index)
+            quotes.remove(sentence)
+        else:
+            match = []
+            for quote in quotes:
+                
+                if quote in sentence or sentence in quote:
+                    match.append(quote)
+            if len(match):
+                for m in match:
+                    quotes.remove(m)
+                alignments.append(index)
+        #print(index, sentence, alignments)
+        
+    #print('ALIGNMENTS', alignments)
+    #print('REMAINING', quotes)
+    if len(quotes):
+        try:
+            print('unable to align', quotes)
+        except Exception:
+            print('unable to align')
+        return []
+    return alignments
 
 def preprocess(body, lower=True):
     """Preprocess the body in our data, replace edits and quotes

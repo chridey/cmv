@@ -35,7 +35,17 @@ class PostPreprocessor:
             self.frameClassifier = FrameClassifier()
 
         self._processedData = None
-        
+
+    @staticmethod
+    def get_sentences(text):
+        sentences = []
+        for paragraph in text:
+            parsed_text = [PostPreprocessor.nlp(unicode(i)) for i in paragraph.split('\n')]
+            for paragraph in parsed_text:
+                for sent in paragraph.sents:
+                    sentences.append(str(sent))
+        return sentences
+    
     def cleanup(self, text):
         
         cleaned_text = normalize_from_body(text, op=self.op, lower=self.lower)
@@ -54,11 +64,13 @@ class PostPreprocessor:
         
         parsed_text = list(self.cleanup(text))
         split_sentences = []
-        for paragraph in parsed_text:
+        paragraph_indices = []
+        for paragraph_index,paragraph in enumerate(parsed_text):
             for sent in paragraph.sents:
                 split_sentences.append(sent)
+                paragraph_indices.append(paragraph_index)
 
-        processed_post = self.metadata.addMetadata(split_sentences)
+        processed_post = self.metadata.addMetadata(split_sentences, paragraph_indices)
         if self.frameClassifier:
             processed_post = self.frameClassifier.addFrames(processed_post)        
         if self.discourseClassifier:
