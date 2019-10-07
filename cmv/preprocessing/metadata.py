@@ -3,10 +3,10 @@ import nltk
 class Metadata(object):
     stemmer = nltk.stem.SnowballStemmer('english')
         
-    def addMetadata(self, parsed_sentences):
+    def addMetadata(self, parsed_sentences, paragraph_indices=None):
         full_metadata = []
         
-        for parsed_sentence in parsed_sentences:
+        for sentence_index,parsed_sentence in enumerate(parsed_sentences):
             metadata = dict(original=[],
                             words=[],
                             lemmas=[],
@@ -53,7 +53,9 @@ class Metadata(object):
             metadata['pos'] = pos
             metadata['ner'] = ner
             metadata['dependencies'] = dependencies
-
+            if paragraph_indices is not None:
+                metadata['paragraph_index'] = paragraph_indices[sentence_index]
+            
             full_metadata.append(metadata)
             
         return full_metadata

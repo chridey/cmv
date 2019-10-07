@@ -66,15 +66,15 @@ def backtrack(stack):
     return stack
 
 
-def delta_dfs(op, comment_forest, comments):
+def delta_dfs(op, comment_forest, comments, root=-1):
     #do a DFS on the comment forest until we find a delta bot
     #once there, backtrack to the comment right before the OP gives a delta (and make sure its the OP giving the delta), keep everything from the OP and responder (only?) in this path
 
-    if not len(comment_forest[-1]):
+    if not len(comment_forest[root]):
         return []
     
     #print(comment_forest)
-    stack = [list(comment_forest[-1])]
+    stack = [list(comment_forest[root])]
     delta_paths = []
     
     while len(stack):
@@ -85,16 +85,42 @@ def delta_dfs(op, comment_forest, comments):
 
         #print(node)        
         if 'author' in comments[node] and comments[node]['author'] == 'DeltaBot' and 'delta awarded' in comments[node]['body']:
+            assert('delta awarded to' in comments[node]['body'])
             
-            #backtrack by 1, check if the author of the post is the OP
+            #backtrack by 1, check if the author of the post is the OP (delta given by op)
             #also check if the delta is given to the author of the root response
+
+            '''
             start = comments[node]['body'].find('/u/')
             end = comments[node]['body'].find('.')
             if end != -1:
                 recipient = comments[node]['body'][start+len('/u/'):end]
             else:
                 recipient = comments[node]['body'][start+len('/u/'):].strip()
-                
+            '''
+
+            start = comments[node]['body'].find('delta awarded to ') + len('delta awarded to ')
+            end = comments[node]['body'][start:].find('.')
+            if end == -1:
+                end = comments[node]['body'][start:].find(' ')
+            else:
+                next_space = comments[node]['body'][start:].find(' ')
+                if next_space != -1:
+                    end = min(end, next_space)
+                          
+            if end != -1:
+                recipient = comments[node]['body'][start:start+end]
+            else:
+                recipient = comments[node]['body'][start:]
+
+            '''
+            recipient = comments[node]['body'][start:start+end].replace('/u/', '').strip()
+    
+            if len(recipient) and recipient[-1] == '.':
+                recipient = recipient[:-1]
+            '''
+            recipient = recipient.replace('/u/', '').strip()
+             
             #check for the case where this node has no parent for some reason
             if len(stack) > 1:
                 stack.pop()            
@@ -113,7 +139,7 @@ def delta_dfs(op, comment_forest, comments):
 
     return delta_paths
             
-def response_dfs(op, comment_forest, comments, deltas=None):
+def response_dfs(op, comment_forest, comments, deltas=None, root=-1):
     #do a DFS for negative responses, but only on the trees where the OP replies directly to the root response
     #if that holds, keep everything in the path, as long as the last comment is from the OP or RR poster
     #basically just continue DFS down the path if a comment is either from OP or RR, terminate otherwise
@@ -132,7 +158,7 @@ def response_dfs(op, comment_forest, comments, deltas=None):
     '''
     
     #print(comment_forest)
-    responses = [i for i in comment_forest[-1] if i not in deltas and 'author' in comments[i]]
+    responses = [i for i in comment_forest[root] if i not in deltas and 'author' in comments[i]]
     if not len(responses):
         return []
     
