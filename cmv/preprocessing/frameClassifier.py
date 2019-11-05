@@ -48,7 +48,11 @@ class FrameClassifier(object):
         metadata = dict(frames=[])
                         
         if len(conll_string.strip()):
-            frames = self.frame_parser.get_frames(conll_string)
+            try:
+                frames = self.frame_parser.get_frames(conll_string)
+            except semafor.TimeoutException:
+                print('timeout!')
+                return preprocessed_post
             
             if self.verbose:
                 print(len(frames), len(preprocessed_post))

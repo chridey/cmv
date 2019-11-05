@@ -1,14 +1,20 @@
 import re
 
 from spacy.en import English
+#import spacy
 
 from cmv.preprocessing.preprocess import normalize_from_body
 from cmv.preprocessing.metadata import Metadata
-from cmv.preprocessing.discourseClassifier import DiscourseClassifier
+try:
+    from cmv.preprocessing.discourseClassifier import DiscourseClassifier
+except Exception:
+    DiscourseClassifier = None
+    
 from cmv.preprocessing.frameClassifier import FrameClassifier
 
 class PostPreprocessor:
     cmv_pattern = re.compile('cmv:?', re.IGNORECASE)
+    #nlp = spacy.load('en') #_core_web_sm') #
     nlp = English()
     
     def __init__(self, data, op=False, lower=False, frames=True, discourse=False):
@@ -27,7 +33,7 @@ class PostPreprocessor:
         self.metadata = Metadata()
         
         self.discourseClassifier = None 
-        if discourse:
+        if discourse and DiscourseClassifier:
             self.discourseClassifier = DiscourseClassifier()
 
         self.frameClassifier = None
@@ -55,12 +61,15 @@ class PostPreprocessor:
         parsed_text = [self.nlp(unicode(i)) for i in cleaned_text.split('\n')]
         return parsed_text
         
-    def preprocess(self, text):
+    def preprocess(self, text, split_sentences=True):
         '''
         takes in a text string and returns a list of metadata dictionaries, one for each sentence
         
         text - a document string
         '''
+
+        if not split_sentences:
+            return self.metadata.addMetadata([self.nlp(unicode(text))], [0])
         
         parsed_text = list(self.cleanup(text))
         split_sentences = []

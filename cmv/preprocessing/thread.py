@@ -4,7 +4,7 @@ class Post:
 
     def getAllWords(self, lower=False):
         words = []
-        for sentence in self.metadata:
+        for sentence in self.__iter__():
             for word in sentence['words']:
                 word = word.strip()
                 if lower:
@@ -13,6 +13,21 @@ class Post:
                     words.append(word)
         return words
 
+    def __iter__(self):
+        sentences = self.metadata
+        if 'data' in self.metadata:
+            sentences = self.metadata['data']
+            
+        for sentence in sentences:
+            yield sentence
+
+    @property
+    def info(self):
+        if 'metadata' in self.metadata:
+            return self.metadata['metadata']
+        else:
+            return {}
+    
     @property
     def keys(self):
         return self.metadata.keys()

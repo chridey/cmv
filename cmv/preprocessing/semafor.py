@@ -1,5 +1,10 @@
 import json
 import socket
+import select
+import time
+
+class TimeoutException(Exception):
+    pass
 
 class SemaforParser:
     def get_frames(self, conll_string):
@@ -14,12 +19,24 @@ class TCPClientSemaforParser(SemaforParser):
 
     def parse(self, conll_string):
         sock = socket.create_connection((self.host, self.port))
+        sock.setblocking(0)
         sock.sendall(conll_string.encode('utf-8'))
         #sleep?
         sock.shutdown(socket.SHUT_WR)
         frame_string = ''
+        start = time.time()
+        timeout_in_seconds = 60
         while 1:
-            data = sock.recv(1024)
+            if time.time() - start > timeout_in_seconds:
+                raise TimeoutException
+
+            ready = select.select([sock], [], [], timeout_in_seconds)
+            if ready[0]:
+                data = sock.recv(1024)
+            else:
+                raise TimeoutException
+                   
+            #data = sock.recv(1024)
             if data == "":
                 break
             frame_string += data
