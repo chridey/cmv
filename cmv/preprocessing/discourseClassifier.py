@@ -253,15 +253,28 @@ class DiscourseClassifier:
         self.word_encoder = CMVWordEncoder(os.path.join(currdir, 'WordEncoder.p'))
         with open(os.path.join(currdir, 'discourse_classes.p'), 'rb') as f:
             _, _, _, class_dict, examples_per_class, _, _ = pickle.load(f)
-        self.args = WordPairCNNSettings(class_dict, examples_per_class,
-                                        os.path.join(currdir,
-                                                     'GoogleNews-vectors-negative300.bin'),
-                                        self.word_encoder)
-                                                     
-        self.discourse_relation_classifier = PDTB_Classifier(self.args)
-        self.discourse_relation_classifier.load_state_dict(torch.load('best_params_4'))
-        self.discourse_relation_classifier = self.discourse_relation_classifier.cuda()
-        
+            
+        self.args = None
+        self._discourse_relation_classifier = None
+
+    @property
+    def discourse_relation_classifier(self):
+        if self._discourse_relation_classifier is None:
+            self.args = WordPairCNNSettings(class_dict, examples_per_class,
+                                            os.path.join(currdir,
+                                                         'GoogleNews-vectors-negative300.bin'),
+                                            self.word_encoder)
+            
+            self._discourse_relation_classifier = PDTB_Classifier(self.args)
+
+            if torch.cuda.is_available():
+                self.discourse_relation_classifier.load_state_dict(torch.load(os.path.join(currdir, 'best_params_4')))            
+                self.discourse_relation_classifier = self.discourse_relation_classifier.cuda()
+            else:
+                self.discourse_relation_classifier.load_state_dict(torch.load(os.path.join(currdir, 'best_params_4'), map_location='cpu')) 
+
+        return self._discourse_relation_classifier
+                    
     def find_possible_discourse_connectives(self, words):
         words = list(map(lambda x: x.lower(), words))
         i = 0
@@ -327,8 +340,8 @@ class DiscourseClassifier:
             words_curr = words[location:]
             tags_curr = tags[location:]            
         else:
-            return features['words_prev'], words, features['POS_prev'], tags
-        return words_prev, words_curr, tags_prev, tags_curr
+            return (features['words_prev'], words, features['POS_prev'], tags), None
+        return (words_prev, words_curr, tags_prev, tags_curr), location
     
     def identify_discourse_arguments(self, discourse_argument_candidates):
         discourse_argument_candidate_locations, discourse_argument_features = zip(*discourse_argument_candidates)
@@ -338,6 +351,7 @@ class DiscourseClassifier:
         sentence_predictions_ambiguous_connectives = self.sentence_classifier_ambiguous_connectives.predict(features)
 
         next_candidates = []
+        predictions = []
         for features, sentence_prediction, sentence_prediction_ambiguous in zip(discourse_argument_features, sentence_predictions, sentence_predictions_ambiguous_connectives):
             #print(features['C'], sentence_prediction, sentence_prediction_ambiguous)
             if features['C'] in self.ambiguous_connectives:
@@ -348,11 +362,14 @@ class DiscourseClassifier:
                 #if we predict the argument is in the previous sentence, just use the entire previous and current sentences as arg1 and arg2
                 next_candidates.append((features['words_prev'], features['words'],
                                         features['POS_prev'], features['POS']))
+                location = None
             else:
                 #we need to determine if the first argument is before the connective or after a comma
-                next_candidates.append(self.handle_intra_sentence_arguments(features))
+                arguments, location = self.handle_intra_sentence_arguments(features)
+                next_candidates.append(arguments)
+            predictions.append((int(sentence_prediction),location))
                 
-        return list(zip(discourse_argument_candidate_locations, next_candidates))
+        return list(zip(discourse_argument_candidate_locations, next_candidates)), predictions
 
     def identify_discourse_relations(self, intra_discourse_candidates):
         locations, input_arguments = zip(*intra_discourse_candidates)
@@ -393,7 +410,10 @@ class DiscourseClassifier:
               
         with torch.no_grad():
             self.discourse_relation_classifier.eval()
-            test_data = [torch.LongTensor(data).cuda() for data in test_data]
+            if torch.cuda.is_available():
+                test_data = [torch.LongTensor(data).cuda() for data in test_data]
+            else:
+                test_data = [torch.LongTensor(data) for data in test_data]
             #print([i.shape for i in test_data])
             #print([(i.max(), i.min()) for i in test_data])
             predictions = self.discourse_relation_classifier(test_data)
@@ -436,7 +456,7 @@ class DiscourseClassifier:
             return add_intra_discourse(preprocessed_post, {})
         
         #given the existence of a relation, identify the arguments to the discourse relation
-        intra_discourse_candidates = self.identify_discourse_arguments(discourse_argument_candidates)
+        intra_discourse_candidates,_ = self.identify_discourse_arguments(discourse_argument_candidates)
 
         #finally, pass these results to the CNN classifier
         intra_discourse = self.identify_discourse_relations(intra_discourse_candidates)

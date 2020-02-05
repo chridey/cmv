@@ -14,6 +14,8 @@ class SemaforParser:
 
 class TCPClientSemaforParser(SemaforParser):
     def __init__(self, host='localhost', port=8998):
+        if port is None:
+            port = 8998
         self.host = host
         self.port = port
 

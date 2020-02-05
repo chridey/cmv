@@ -2,6 +2,17 @@ class Post:
     def __init__(self, metadata):
         self.metadata = metadata
 
+    def getAll(self, key, lower=False):
+        words = []
+        for sentence in self.__iter__():
+            for word in sentence[key]:
+                word = word.strip()
+                if lower:
+                    words.append(word.lower())
+                else:
+                    words.append(word)
+        return words
+        
     def getAllWords(self, lower=False):
         words = []
         for sentence in self.__iter__():
@@ -13,6 +24,12 @@ class Post:
                     words.append(word)
         return words
 
+    def getAllLemmas(self, lower=False):
+        return self.getAll('lemmas', lower)
+
+    def getAllPos(self, lower=False):
+        return self.getAll('pos', lower)
+        
     def __iter__(self):
         sentences = self.metadata
         if 'data' in self.metadata:

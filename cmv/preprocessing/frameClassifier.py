@@ -23,10 +23,10 @@ def to_conll(index, word, pos, head, dep):
                                                                        '_')
 
 class FrameClassifier(object):
-    def __init__(self, frame_parser=None, verbose=False):
+    def __init__(self, frame_parser=None, verbose=False, port=None):
         self.frame_parser = frame_parser
         if frame_parser is None:
-            self.frame_parser = semafor.TCPClientSemaforParser()
+            self.frame_parser = semafor.TCPClientSemaforParser(port=port)
         self.verbose = verbose
         
     def addFrames(self, preprocessed_post):

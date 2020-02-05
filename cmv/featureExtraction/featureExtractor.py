@@ -1,4 +1,5 @@
 import collections
+import json
 
 import pandas as pd
 import nltk
@@ -172,31 +173,67 @@ class ArgumentFeatureExtractor:
                                                  'structure': True}}
             
         self.stopwords = set(nltk.corpus.stopwords.words('english'))
+        #self.stopwords = set(json.load(open('/proj/nlpdisk3/nlpusers/chidey/cmv/fusion/argument_words.json')))
                 
         self.validFeatures = {'interplay': self.getInterplay,
                               'emotion': self.getEmotions,
                               'structure': self.getStructure,
                               'argumentation': self.getArgumentation,
                               'paragraph': self.getParagraph,
+                              'coherence': self.getCoherence,
                               }
                               
         self.functionFeatures = dict((v,k) for k,v in self.validFeatures.items())
 
         self._emotionEmbeddings = None
         self._emotionEmbeddingsDim = None
-        
+
+        self._embeddings = None
+        self._embedding_dim = None
+        self._embedding_cache = {}
+
+    def _load_embeddings(self, feature_settings):
+        self._embeddings = {}
+        self._embedding_dim = {}
+        for key in feature_settings:
+            if type(feature_settings[key]) == dict and 'embedding_file' in feature_settings[key]:
+                filename = feature_settings[key]['embedding_file']
+                if filename not in self._embedding_cache:
+                    embeddings, embedding_dim = self._read_embeddings(filename)
+                    self._embedding_cache[filename] = embeddings, embedding_dim
+                embeddings, embedding_dim = self._embedding_cache[filename]
+                self._embeddings[key] = embeddings
+                self._embedding_dim[key] = embedding_dim
+                
+    @property
+    def embeddings(self):
+        if self._embeddings is None:
+            self._load_embeddings(self.settings['featureSettings'])
+        return self._embeddings
+
+    @property
+    def embedding_dim(self):
+        if self._embedding_dim is None:
+            self._load_embeddings(self.settings['featureSettings'])
+        return self._embedding_dim    
+
+    def _read_embeddings(self, filename):
+        embeddings = {}
+        embedding_dim = None
+        with open(filename) as f:
+            for line in f:
+                word, embedding = line.split(' ', 1)
+                embedding = embedding.split()
+                embeddings[word] = np.array(list(map(float,embedding)))
+                if embedding_dim is None:
+                    embedding_dim = embeddings[word].shape[0]
+                assert(embedding_dim == embeddings[word].shape[0])        
+        return embeddings, embedding_dim
+    
     @property
     def emotionEmbeddings(self):
         if self._emotionEmbeddings is None:
-            self._emotionEmbeddings = {}
-            with open(self.emotion_embeddings_file) as f:
-                for line in f:
-                    word, embedding = line.split(' ', 1)
-                    embedding = embedding.split()
-                    self._emotionEmbeddings[word] = np.array(list(map(float,embedding)))
-                    if self._emotionEmbeddingsDim is None:
-                        self._emotionEmbeddingsDim = self._emotionEmbeddings[word].shape[0]
-                    assert(self._emotionEmbeddingsDim == self._emotionEmbeddings[word].shape[0])
+            self._emotionEmbeddings, self._emotionEmbeddingsDim = self._read_embeddings(self.emotion_embeddings_file)
                     
         return self._emotionEmbeddings
 
@@ -221,6 +258,73 @@ class ArgumentFeatureExtractor:
         
         keys = ['EMAX' + str(i) for i in range(self._emotionEmbeddingsDim)] + ['EMIN' + str(i) for i in range(self._emotionEmbeddingsDim)] + ['EMEAN' + str(i) for i in range(self._emotionEmbeddingsDim)]
         return dict(zip(keys, features))
+
+    def getEmbedding(self, words, embedding_type, pooling=('mean', 'max', 'min')):
+        embeddings = [self.embeddings[embedding_type][word] for word in words if word in self.embeddings[embedding_type]]
+        if len(embeddings):
+            embedded_sentence = np.stack(embeddings)
+            features = []
+            for pool in pooling:
+                if pool == 'max':
+                    features.append(embedded_sentence.max(axis=0))
+                elif pool == 'min':
+                    features.append(embedded_sentence.min(axis=0))
+                elif pool == 'mean':
+                    features.append(embedded_sentence.mean(axis=0))
+            features = np.concatenate(features)
+        else:
+            features = np.zeros(self.embedding_dim[embedding_type]*len(pooling))
+        return features
+    
+    def getCoherence(self, dataPoint, *args):
+        op_lemmas = dataPoint.originalPost.getAllLemmas(True)
+        op_pos = dataPoint.originalPost.getAllPos()
+        rr_lemmas = dataPoint.response.getAllLemmas(True)
+        rr_pos = dataPoint.response.getAllPos()
+
+        stopwords = self.stopwords
+        if self.settings['featureSettings'][self.functionFeatures[self.getCoherence]].get('argument_words') is not None:
+            stopwords = self.settings['featureSettings'][self.functionFeatures[self.getCoherence]]['argument_words']
+        
+        op_content = []
+        for lemma, pos in zip(op_lemmas, op_pos):
+            if lemma in stopwords or not lemma.isalnum():
+                continue
+            op_content.append((lemma, pos[0]))
+        rr_content = []
+        for lemma, pos in zip(rr_lemmas, rr_pos):
+            if lemma in stopwords or not lemma.isalnum():
+                continue
+            rr_content.append((lemma, pos[0]))
+
+        #print(op_content)
+        #print(rr_content)
+        #get most similar mean/max/min for V/N/J            
+        op_embedding, rr_embedding, keys = [], [], []
+        for pooling in ('mean', 'min', 'max'):
+            for pos in ({'V'}, {'N'}, {'J'}, {'V', 'N', 'J'},
+                        set(map(chr, range(65,91)))):
+                if self.settings['featureSettings'][self.functionFeatures[self.getCoherence]].get('has_pos', True):
+                    op = {'_'.join(i) for i in op_content if i[1][0] in pos}
+                    rr = {'_'.join(i) for i in rr_content if i[1][0] in pos}
+                else:
+                    op = {i[0] for i in op_content if i[1][0] in pos}
+                    rr = {i[0] for i in rr_content if i[1][0] in pos}
+                #print(pos, op, rr)
+                op_embedding.append(self.getEmbedding(op,
+                                                      self.functionFeatures[self.getCoherence],
+                                                      pooling=(pooling,)))
+                rr_embedding.append(self.getEmbedding(rr,
+                                                      self.functionFeatures[self.getCoherence],
+                                                      pooling=(pooling,)))
+                keys.append(' '.join([pooling, ''.join(pos)]))
+
+        a = np.array(op_embedding)
+        b = np.array(rr_embedding)
+        cos_sims = (a*b).sum(axis=1)/(np.linalg.norm(a, axis=1)*np.linalg.norm(b, axis=1))
+
+        return dict(zip(map(lambda x:'coherence_' + x, keys),
+                        cos_sims))
         
     def getInterplay(self, dataPoint, *args):
         op_all = set(dataPoint.originalPost.getAllWords(True))
@@ -344,15 +448,26 @@ class ArgumentFeatureExtractor:
             argumentation = self.getArgumentation(paragraph, start)
             for key in argumentation:
                 aggregate_features['argumentation_' + key].append(argumentation[key])
-                                
+
+            #calculate coherence features for each paragraph
+            coherence = self.getCoherence(paragraph)
+            for key in coherence:
+                aggregate_features['op_' + key].append(coherence[key])
+                            
             #calculate interplay (redundancy) between all paragraphs
-            for start2, end2 in zip(structureFeatures.paragraph_breaks[i+1:], structureFeatures.paragraph_breaks[i+2:]):
+            for j,(start2, end2) in enumerate(zip(structureFeatures.paragraph_breaks[i+1:], structureFeatures.paragraph_breaks[i+2:])):
                 start2 = structureFeatures.original_index[start2]
                 end2 = structureFeatures.original_index[end2]
                 #print((start,end),(start2,end2))                
                 paragraph_interaction = Thread(dict(metadata=metadata, data=data[start:end]),
                                                dict(metadata=metadata, data=data[start2:end2]))
 
+                #only get coherence between consecutive paragraphs
+                if j-i == 1:
+                    coherence = self.getCoherence(paragraph_interaction)
+                    for key in coherence:
+                        aggregate_features['inter_' + key].append(coherence[key])
+                
                 redundancy = self.getInterplay(paragraph_interaction)
                 for key in redundancy:
                     aggregate_features['redundancy_' + key].append(redundancy[key])
