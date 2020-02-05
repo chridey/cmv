@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 
 from allennlp.data import Vocabulary
@@ -16,11 +18,12 @@ from cmv.rnn.attention.interAttention import ConditionalSeq2SeqEncoder
 class HierarchicalDocumentEmbedder(Model):
     def __init__(self,
                  vocab: Vocabulary,
-                 embedder: TextFieldEmbedder,
-                 encoder: Seq2VecEncoder,
                  sentence_encoder: Seq2SeqEncoder,
+                 embedder: Optional[TextFieldEmbedder] = None,
+                 encoder: Optional[Seq2VecEncoder] = None,                 
                  dropout: float = 0.5,
-                 feature_feedforward: FeedForward = None):
+                 feature_feedforward: FeedForward = None,
+                 compress_before=False):
 
         super().__init__(vocab=vocab)
         
@@ -33,50 +36,73 @@ class HierarchicalDocumentEmbedder(Model):
         #    self.rnn_input_dropout = InputVariationalDropout(dropout)
         #else:
         self.rnn_input_dropout = None
-                
+        self._compress_before = compress_before
+        
     def forward(self,
-                post,
+                post=None,
                 features=None,
                 idxs=None):
 
-        if idxs is not None:
-            post = extract(post, idxs)
-            features = extract(post, idxs, features)
+        if idxs is not None and self._compress_before:
+            extracted_post = {}
+            if post is not None:
+                for key in post:
+                    extracted_post[key] = extract(post[key], idxs)
+                post = extracted_post
+            features = extract(features, idxs)
+
+        sentence_features = []
+        if post is not None:
+            embedded = self._embedder(post, num_wrapping_dims=1)
+            mask = get_text_field_mask({i:j for i,j in post.items() if i!='mask'},
+                                       num_wrapping_dims=1)
+
+            # apply dropout for LSTM        
+            if self.rnn_input_dropout:            
+                embedded = self.rnn_input_dropout(embedded)
+
+            #reshape to be batch_size * n_sentences x n_words x dim?
+            batch_size, max_doc_len, max_sent_len = mask.shape
+
+            # encode response at sentence level                                    
+            sentence_encoded = self._encoder(embedded.view(batch_size*max_doc_len,
+                                                           max_sent_len, -1),
+                                             mask.view(batch_size*max_doc_len, -1))
+
+            sentence_encoded = sentence_encoded.view(batch_size, max_doc_len, -1)
+            #before sentences, append features to each sentence
+            sentence_features.append(sentence_encoded)
+
+            sentence_mask = mask.sum(dim=-1) > 0
+
+        else:
+            #need to compute sentence mask from features
+            sentence_mask = []
+            for feature in features:
+                i = 0
+                for idx,sentence_feature in enumerate(feature):
+                    if sentence_feature.sum() > 0:
+                        i = idx
+                sentence_mask.append([1]*i + [0]*(features.shape[1]-i))
+            sentence_mask = torch.FloatTensor(sentence_mask)
+            if torch.cuda.is_available() and features.is_cuda:
+                idx = features.get_device()
+                sentence_mask = sentence_mask.cuda(idx)
             
-        embedded = self._embedder(post, num_wrapping_dims=1)
-        mask = get_text_field_mask({i:j for i,j in post.items() if i!='mask'},
-                                   num_wrapping_dims=1)
-
-        # apply dropout for LSTM        
-        if self.rnn_input_dropout:            
-            embedded = self.rnn_input_dropout(embedded)
-
-        #reshape to be batch_size * n_sentences x n_words x dim?
-        batch_size, max_doc_len, max_sent_len = mask.shape
-
-        # encode response at sentence level                                    
-        sentence_encoded = self._encoder(embedded.view(batch_size*max_doc_len,
-                                                       max_sent_len, -1),
-                                         mask.view(batch_size*max_doc_len, -1))
-
-        sentence_encoded = sentence_encoded.view(batch_size, max_doc_len, -1)
-        #before sentences, append features to each sentence
-        sentence_features = [sentence_encoded]
         if features is not None:
-            sentence_features.append(features)                
+            sentence_features.append(features)
+            
         if self._feature_feedforward is not None:
             sentence_encoded = self._feature_feedforward(torch.cat(sentence_features, dim=-1))        
-                
-        sentence_mask = mask.sum(dim=-1) > 0
-
+        else:
+            sentence_encoded = torch.cat(sentence_features, dim=-1)
+        
         document = self._sentence_encoder(sentence_encoded,
                                           sentence_mask)
 
-        #if idxs is not None and compress_response:
-        #    encoded_response = extract({'tokens': encoded_response}, idxs)['tokens']
-        #    extracted_sentences = extract(response, idxs)
-        #    response_mask = (get_text_field_mask(extracted_sentences,
-        #                                  num_wrapping_dims=1).sum(dim=-1) > 0)
+        if idxs is not None and not self._compress_before:
+            document = extract(document, idxs)
+            sentence_mask = extract(sentence_mask.unsqueeze(-1), idxs).squeeze(-1)
         
         return document, sentence_mask
 

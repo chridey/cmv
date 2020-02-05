@@ -1,6 +1,7 @@
 import pandas as pd
 import nltk
 import numpy as np
+from sklearn.externals import joblib
 
 from cmv.preprocessing.thread import Post,Thread
 
@@ -24,19 +25,36 @@ class ArgumentFeatureExtractor:
         else:
             self.settings = {'featureSettings': {'interplay': True,
                                                  'emotion': True,
-                                                 'structure': True}}
+                                                 'structure': True,
+                                                 'tfidf': False}}
             
         self.stopwords = set(nltk.corpus.stopwords.words('english'))
                 
         self.validFeatures = {'interplay': self.getInterplay,
                               'emotion': self.getEmotions,
-                              'structure': self.getStructure
+                              'structure': self.getStructure,
+                              'tfidf': self.getTfidf,
                               }
                               
         self.functionFeatures = dict((v,k) for k,v in self.validFeatures.items())
 
         self._emotionEmbeddings = None
         self._emotionEmbeddingsDim = None
+
+        self._tfidf_vectorizer = None
+        
+    @property
+    def tfidf_vectorizer(self):
+        if self._tfidf_vectorizer is None:
+            if 'vectorizer' in self.settings:
+                self._tfidf_vectorizer = joblib.load(self.settings['vectorizer'])
+                
+        return self._tfidf_vectorizer
+    
+    def getTfidf(self, dataPoint, *args):
+        pass
+        #words = ' '.join(dataPoint.response.getAllWords(True))
+        #self.tfidf_vectorizer.fit([words])
         
     @property
     def emotionEmbeddings(self):
@@ -92,11 +110,14 @@ class ArgumentFeatureExtractor:
         features = {}
         if featureSettings is None:
             featureSettings = self.settings['featureSettings']
-            
+
+        if 'structure' in featureSettings:
+            featureSettings['structure'] = False
+                        
         for featureName in featureSettings:
             assert(featureName in self.validFeatures)
             if featureSettings[featureName]:
-                features.update(self.validFeatures[featureName](dataPoint))
+                features.update(self.validFeatures[featureName](dataPoint, None))
         return features
         
         return features

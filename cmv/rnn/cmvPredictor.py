@@ -66,7 +66,7 @@ class CMVPredictor(Model):
         initializer(self)
 
     def forward(self,                
-                response: Dict[str, torch.LongTensor],
+                response: Dict[str, torch.LongTensor] = None,
                 label: torch.IntTensor = None,
                 original_post: Optional[Dict[str, torch.LongTensor]] = None,
                 weakpoints: Optional[torch.LongTensor]=None,
@@ -77,6 +77,7 @@ class CMVPredictor(Model):
                 compress_response: bool=False,
                 op_doc_features: list=None,
                 response_doc_features: list=None,
+                goodpoints=None
                 ) -> Dict[str, torch.Tensor]:
 
         #print(original_post)
@@ -98,16 +99,16 @@ class CMVPredictor(Model):
                     print(o)
         '''
 
-        if False:
-            encoded_response = None
-            response_mask = None
-            combined_input = []
-        else:
+        output_dict = {}    
+        encoded_response = None
+        response_mask = None
+        combined_input = []
+        if response is not None or response_features is not None:
             sentence_encoded_response, response_mask = self._response_sentence_encoder(response,
                                                                             response_features,
                                                                             idxs if compress_response else None)
 
-            if original_post is not None:
+            if original_post is not None or op_features is not None:
                 
                 sentence_encoded_op, op_mask = self._op_sentence_encoder(original_post,
                                                                              op_features,
@@ -115,12 +116,12 @@ class CMVPredictor(Model):
 
 
                 if self._interaction_encoder is not None:
+                    output_dict.update({'pre_interaction_encoded_response':sentence_encoded_response})
                     sentence_encoded_response, sentence_encoded_op  = self._interaction_encoder(sentence_encoded_response,
                                                                                                response_mask,
                                                                                                sentence_encoded_op,
                                                                                                op_mask)
-
-
+                
                 pooled_response = self._response_encoder(sentence_encoded_response, response_mask,
                                                          sentence_encoded_op, op_mask)
             else:
@@ -146,27 +147,28 @@ class CMVPredictor(Model):
         #print('1-predictions', 1-predictions)
         #print(label)
         
-        output_dict = {"label_logits": label_logits, "label_probs": label_probs,
-                       "representation": combined_input,
-                       "encoded_response": sentence_encoded_response,
-                       "response_mask": response_mask}
+        output_dict.update({"label_logits": label_logits, "label_probs": label_probs,
+                        "representation": combined_input,
+                        "encoded_response": sentence_encoded_response,
+                        "response_mask": response_mask})
 
-        true_weight = 1 if ((label==1).sum().float() == 0) else ((label==0).sum().float() / (label==1).sum().float())            
-        #true_weight = (label==0).sum().float() / (label==1).sum().float()
-        #print(true_weight)
-        
-        weight = label.eq(0).float() + label.eq(1).float() * true_weight
-        loss = self._loss(label_logits, label.float(), weight=weight)
+        if label is not None:
+            true_weight = 1 if ((label==1).sum().float() == 0) else ((label==0).sum().float() / (label==1).sum().float())            
+            #true_weight = (label==0).sum().float() / (label==1).sum().float()
+            #print(true_weight)
 
-        if fake_data:
-            self._fake_accuracy(predictions, label.byte())
-            self._fake_fscore(torch.stack([1-predictions, predictions], dim=1), label)
-        else:
-            self._accuracy(predictions, label.byte())
-            #self._cat_accuracy(torch.stack([1-predictions, predictions], dim=1), label.byte())
-            self._fscore(torch.stack([1-predictions, predictions], dim=1), label)
-        
-        output_dict["loss"] = loss
+            weight = label.eq(0).float() + label.eq(1).float() * true_weight
+            loss = self._loss(label_logits, label.float(), weight=weight)
+
+            if fake_data:
+                self._fake_accuracy(predictions, label.byte())
+                self._fake_fscore(torch.stack([1-predictions, predictions], dim=1), label)
+            else:
+                self._accuracy(predictions, label.byte())
+                #self._cat_accuracy(torch.stack([1-predictions, predictions], dim=1), label.byte())
+                self._fscore(torch.stack([1-predictions, predictions], dim=1), label)
+
+            output_dict["loss"] = loss
 
         return output_dict
 

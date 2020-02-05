@@ -2,6 +2,15 @@ class Post:
     def __init__(self, metadata):
         self.metadata = metadata
 
+    def getAllSentences(self, lower=False):
+        sentences = []
+        for sentence in self.metadata:
+            if lower:
+                sentences.append(' '.join(sentence['words']).lower())
+            else:
+                sentences.append(' '.join(sentence['words']))
+        return sentences        
+        
     def getAllWords(self, lower=False):
         words = []
         for sentence in self.metadata:
