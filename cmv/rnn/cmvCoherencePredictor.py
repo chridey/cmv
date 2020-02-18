@@ -157,8 +157,10 @@ class CMVCoherencePredictor(Model):
         loss = self._loss(label_logits, label.float(), weight=weight)
 
         self._accuracy(predictions, label.byte())
-        self._fscore(torch.stack([1-predictions, predictions], dim=1), label)
-        
+        try:
+            self._fscore(torch.stack([1-predictions, predictions], dim=1), label)
+        except Exception:
+            self._fscore(torch.stack([~predictions, predictions], dim=1), label)
         output_dict["loss"] = loss
 
         return output_dict
