@@ -275,6 +275,35 @@ class ArgumentFeatureExtractor:
         else:
             features = np.zeros(self.embedding_dim[embedding_type]*len(pooling))
         return features
+
+    def getCoherenceEmbedding(self, post):
+        lemmas = post.getAllLemmas(True)
+        pos = post.getAllPos()
+        
+        stopwords = self.stopwords
+        argument_words = self.settings['featureSettings'][self.functionFeatures[self.getCoherence]].get('argument_words', None)
+        if argument_words is not None:
+            stopwords = argument_words
+        
+        content = []
+        for lemma, pos in zip(lemmas, pos):
+            if lemma in stopwords or not lemma.isalnum():
+                continue
+            content.append((lemma, pos[0]))
+
+        poolings = self.settings['featureSettings'][self.functionFeatures[self.getCoherence]].get('pooling', ['mean'])
+        poses = set(self.settings['featureSettings'][self.functionFeatures[self.getCoherence]].get('pos_types', {'VNJ'}))
+        embedding = []
+        for pooling in poolings:
+            for pos in poses:
+                if self.settings['featureSettings'][self.functionFeatures[self.getCoherence]].get('has_pos', True):
+                    content = {'_'.join(i) for i in content if i[1][0] in pos}
+                else:
+                    content = {i[0] for i in content if i[1][0] in pos}
+                embedding.append(self.getEmbedding(content,
+                                                   self.functionFeatures[self.getCoherence],
+                                                   pooling=(pooling,)))
+        return np.concatenate(np.array(embedding))
     
     def getCoherence(self, dataPoint, *args):
         op_lemmas = dataPoint.originalPost.getAllLemmas(True)
@@ -283,8 +312,9 @@ class ArgumentFeatureExtractor:
         rr_pos = dataPoint.response.getAllPos()
 
         stopwords = self.stopwords
-        if self.settings['featureSettings'][self.functionFeatures[self.getCoherence]].get('argument_words') is not None:
-            stopwords = self.settings['featureSettings'][self.functionFeatures[self.getCoherence]]['argument_words']
+        argument_words = self.settings['featureSettings'][self.functionFeatures[self.getCoherence]].get('argument_words')
+        if argument_words is not None:
+            stopwords = argument_words
         
         op_content = []
         for lemma, pos in zip(op_lemmas, op_pos):
@@ -321,6 +351,7 @@ class ArgumentFeatureExtractor:
 
         a = np.array(op_embedding)
         b = np.array(rr_embedding)
+
         cos_sims = (a*b).sum(axis=1)/(np.linalg.norm(a, axis=1)*np.linalg.norm(b, axis=1))
 
         return dict(zip(map(lambda x:'coherence_' + x, keys),
@@ -448,11 +479,6 @@ class ArgumentFeatureExtractor:
             argumentation = self.getArgumentation(paragraph, start)
             for key in argumentation:
                 aggregate_features['argumentation_' + key].append(argumentation[key])
-
-            #calculate coherence features for each paragraph
-            coherence = self.getCoherence(paragraph)
-            for key in coherence:
-                aggregate_features['op_' + key].append(coherence[key])
                             
             #calculate interplay (redundancy) between all paragraphs
             for j,(start2, end2) in enumerate(zip(structureFeatures.paragraph_breaks[i+1:], structureFeatures.paragraph_breaks[i+2:])):
@@ -461,12 +487,6 @@ class ArgumentFeatureExtractor:
                 #print((start,end),(start2,end2))                
                 paragraph_interaction = Thread(dict(metadata=metadata, data=data[start:end]),
                                                dict(metadata=metadata, data=data[start2:end2]))
-
-                #only get coherence between consecutive paragraphs
-                if j-i == 1:
-                    coherence = self.getCoherence(paragraph_interaction)
-                    for key in coherence:
-                        aggregate_features['inter_' + key].append(coherence[key])
                 
                 redundancy = self.getInterplay(paragraph_interaction)
                 for key in redundancy:
