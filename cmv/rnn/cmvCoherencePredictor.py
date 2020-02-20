@@ -140,8 +140,8 @@ class CMVCoherencePredictor(Model):
             global_logit = global_features
         #print(global_logit.shape)
         #print(self._weight.shape)
-        label_logits = coherence_logit.view(-1) #UNDO
-        #label_logits = torch.matmul(torch.cat([coherence_logit, global_logit], dim=-1), torch.softmax(self._weight, dim=0))#
+        #label_logits = coherence_logit.view(-1) #UNDO
+        label_logits = torch.matmul(torch.cat([coherence_logit, global_logit], dim=-1), torch.softmax(self._weight, dim=0))#
         if not self.training:
             print(torch.softmax(self._weight, dim=0))
         #print(label_logits.shape)
